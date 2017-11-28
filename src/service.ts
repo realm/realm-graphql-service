@@ -1,7 +1,7 @@
 import { BaseRoute, Get, Post, ServerStarted, Server, Request, Response } from 'realm-object-server'
 import { graphqlExpress, ExpressHandler, graphiqlExpress } from 'apollo-server-express';
 import { DocumentNode, GraphQLError, GraphQLSchema, GraphQLObjectType, buildSchema } from 'graphql';
-import { ObjectSchemaProperty, ObjectSchema } from 'realm';
+import { ObjectSchemaProperty, ObjectSchema, Results } from 'realm';
 import { makeExecutableSchema } from 'graphql-tools';
 import { IResolverObject, IResolvers } from 'graphql-tools/dist/Interfaces';
 import * as pluralize from 'pluralize'
@@ -81,8 +81,8 @@ export class GraphQLService {
 
             types.push([obj.name, propertyInfo.pk]);
           
-            schema += `type ${obj.name} { \n    ${propertyInfo.propertySchema}}\n\n`;
-            schema += `input ${obj.name}Input { \n    ${propertyInfo.inputPropertySchema}}\n\n`;
+            schema += `type ${obj.name} { \n${propertyInfo.propertySchema}}\n\n`;
+            schema += `input ${obj.name}Input { \n${propertyInfo.inputPropertySchema}}\n\n`;
         }
 
         let query = 'type Query {\n';
@@ -120,7 +120,7 @@ export class GraphQLService {
 
     private setupGetAllObjects(queryResolver: IResolverObject, type: string, pluralType: string, realm: Realm): string {
         queryResolver[pluralType] = (_, args) => {
-            let result = realm.objects(type);
+            let result: any = realm.objects(type);
             if (args.query) {
                 result = result.filtered(args.query);
             }
@@ -129,12 +129,22 @@ export class GraphQLService {
                 let descending = args.descending || false;
                 result = result.sorted(args.sortBy, descending);
             }
+
+            if (args.skip || args.take) {
+                let skip = args.skip || 0;
+                if (args.take) {
+                    result = result.slice(skip, args.take + skip);
+                }
+                else {
+                    result = result.slice(skip);
+                }
+            }
             
             return result;
         };
 
         // TODO: limit sortBy to only valid properties
-        return `    ${pluralType}(query: String, sortBy: String, descending: Boolean): [${type}!]\n`;
+        return `${pluralType}(query: String, sortBy: String, descending: Boolean, skip: Int, take: Int): [${type}!]\n`;
     }
 
     private setupAddObject(mutationResolver: IResolverObject, type: string, realm: Realm): string {
@@ -147,12 +157,12 @@ export class GraphQLService {
             return result;
         };
 
-        return `    add${type}(input: ${type}Input): ${type}\n`;
+        return `add${type}(input: ${type}Input): ${type}\n`;
     }
 
     private setupGetObjectByPK(queryResolver: IResolverObject, type: string, camelCasedType: string, realm: Realm, pk: PKInfo): string {
         queryResolver[camelCasedType] = (_, args) => realm.objectForPrimaryKey(type, args[pk.name]);
-        return `    ${camelCasedType}(${pk.name}: ${pk.type}): ${type}\n`;
+        return `${camelCasedType}(${pk.name}: ${pk.type}): ${type}\n`;
     }
 
     private setupUpdateObject(mutationResolver: IResolverObject, type: string, realm: Realm): string {
@@ -167,7 +177,7 @@ export class GraphQLService {
             return result;
         };
 
-        return `    update${type}(input: ${type}Input): ${type}\n`;
+        return `update${type}(input: ${type}Input): ${type}\n`;
     }
 
     private setupDeleteObject(mutationResolver: IResolverObject, type: string, realm: Realm, pk: PKInfo): string {
@@ -184,7 +194,7 @@ export class GraphQLService {
             return result;
         };
 
-        return `    delete${type}(${pk.name}: ${pk.type}): Boolean\n`;
+        return `delete${type}(${pk.name}: ${pk.type}): Boolean\n`;
     }
 
     private getPropertySchema(obj: ObjectSchema): PropertySchemaInfo {
@@ -204,8 +214,8 @@ export class GraphQLService {
 
             let types = this.getTypeString(prop);
 
-            schemaProperties += `    ${key}: ${types.type}\n`;
-            inputSchemaProperties += `    ${key}: ${types.inputType}\n`
+            schemaProperties += `${key}: ${types.type}\n`;
+            inputSchemaProperties += `${key}: ${types.inputType}\n`
 
             if (key === obj.primaryKey) {
                 primaryKey = {
