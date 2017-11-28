@@ -42,13 +42,13 @@ You can see the schema of the Realm by querying the `__schema` node (it will als
 
 ```
 {
-	__schema {
-  	types {
-    	name
+  __schema {
+    types {
+      name
       fields {
         name
       }
-	  }
-	}
+    }
+  }
 }
 ```
