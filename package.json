@@ -1,0 +1,40 @@
+{
+    "name": "@realm/graphql-access",
+    "version": "1.0.0",
+    "description": "",
+    "main": "src/index.js",
+    "scripts": {
+        "build": "rm -rf dist; ./node_modules/.bin/tsc",
+        "clean": "rm -rf dist",
+        "start": "npm run build && node dist/index.js",
+        "test": "mocha --opts ./mocha.opts"
+    },
+    "author": "",
+    "license": "ISC",
+    "optionalDependencies": {
+        "realm-object-server": ">=2.0.21"
+    },
+    "devDependencies": {
+        "@types/chai": "^4.0.4",
+        "@types/faker": "^4.1.2",
+        "@types/mocha": "^2.2.44",
+        "chai": "^4.1.2",
+        "del": "^3.0.0",
+        "faker": "^4.1.0",
+        "mocha": "^4.0.1",
+        "ts-node": "^3.3.0",
+        "typescript": "^2.6.1"
+    },
+    "dependencies": {
+        "@types/express-graphql": "0.0.35",
+        "@types/graphql": "^0.11.6",
+        "@types/reconnectingwebsocket": "^1.0.1",
+        "@types/superagent": "^3.5.6",
+        "@types/urijs": "^1.15.34",
+        "express-graphql": "^0.6.11",
+        "graphql": "^0.11.7",
+        "reconnecting-websocket": "^3.2.2",
+        "superagent": "^3.8.1",
+        "urijs": "^1.19.0"
+    }
+}
