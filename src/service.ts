@@ -1,32 +1,10 @@
-import {
-    BaseRoute,
-    Get,
-    Post,
-    Put,
-    Delete,
-    Query,
-    Params,
-    ServerStarted,
-    Server,
-    Body,
-    Request,
-    Response
-} from 'realm-object-server'
-
-import {
-    Source,
-    parse,
-    validate,
-    execute,
-    formatError,
-    getOperationAST,
-    specifiedRules,
-} from 'graphql';
-
-import * as GraphQLHTTP from 'express-graphql';
-
+import { BaseRoute, Get, Post, ServerStarted, Server, Request, Response } from 'realm-object-server'
+import { graphqlExpress, ExpressHandler, graphiqlExpress } from 'apollo-server-express';
 import { DocumentNode, GraphQLError, GraphQLSchema, GraphQLObjectType, buildSchema } from 'graphql';
 import { ObjectSchemaProperty } from 'realm';
+import { makeExecutableSchema } from 'graphql-tools';
+import { IResolverObject, IResolvers } from 'graphql-tools/dist/Interfaces';
+import * as pluralize from 'pluralize'
 
 function getSchemaFromRealmByObjectName(realm: Realm, objectName: string): Realm.ObjectSchema | undefined {
     return realm.schema.find(s => s.name === objectName)
@@ -34,46 +12,67 @@ function getSchemaFromRealmByObjectName(realm: Realm, objectName: string): Realm
 
 @BaseRoute('/graphql')
 export class GraphQLService {
-    server: Server
+    server: Server;
+    handler: ExpressHandler;
+    graphiql: ExpressHandler;
     
     @ServerStarted()
     serverStarted(server: Server) {
         this.server = server;
+
+        this.handler = graphqlExpress(async (req, res) => {
+            let path = req.params['path'];
+            let realm = await this.server.openRealm(path)
+
+            return {
+                schema: this.getSchema(path, realm)
+            };
+        });
+
+        this.graphiql = graphiqlExpress(req => {
+            let path = req.params['path'];
+            
+            return {
+                endpointURL: `/graphql/${path}`
+            };
+        });
+    }
+
+    @Get('/explore/:path')
+    getExplore(@Request() req, @Response() res) {
+        this.graphiql(req, res, null);
+    }
+
+    @Post('/explore/:path')
+    postExplore(@Request() req, @Response() res) {
+        this.graphiql(req, res, null);
     }
 
     @Get('/:path')
-    async get(@Params('path') path: string,
-        @Request() req, 
-        @Response() res) {
-        await this.handleGraphQLRequest(path, req, res);
+    get(@Request() req, @Response() res) {
+        this.handler(req, res, null);
     }
 
     @Post('/:path')
-    async post(@Params('path') path: string,
-        @Request() req, 
-        @Response() res) {
-        await this.handleGraphQLRequest(path, req, res);
+    post(@Request() req, @Response() res) {
+        this.handler(req, res, null);
     }
 
-    async handleGraphQLRequest(path: string, request: any, response: any) {
-        let schema = await this.getSchema(path);
-        GraphQLHTTP({
-            schema: schema,
-            rootValue: {
-                hello: () => { return path }
-            },
-            graphiql: true,
-        })(request, response);
-    }
-
-    async getSchema(path: string) : Promise<GraphQLSchema> {
-        let realm = await this.server.openRealm(path)
+    getSchema(path: string, realm: Realm) : GraphQLSchema {
+        interface PKInfo { 
+            name: string
+            type: string
+        }
 
         let schema = '';
-        let types = new Array<string>();
+        let types = new Array<[string, PKInfo]>();
+        let queryResolver: IResolverObject = { };
 
+        
         for (const obj of realm.schema) {
             schema += `type ${obj.name} {\n`;
+
+            let primaryKey: PKInfo = null;
 
             for (const key in obj.properties) {
                 if (obj.properties.hasOwnProperty(key)) {
@@ -88,7 +87,7 @@ export class GraphQLService {
                             break;
                         case 'list':
                             let innerType = this.getTypeString(prop.objectType, prop.optional);
-                            if (innerType === null) {
+                            if (!innerType) {
                                 innerType = prop.objectType;
                             }
                             type = `[${innerType}]`;
@@ -98,25 +97,61 @@ export class GraphQLService {
                             break;
                     }
 
-                    schema += `    ${key}: ${type}\n`
+                    schema += `    ${key}: ${type}\n`;
 
+                    if (key === obj.primaryKey) {
+                        primaryKey = {
+                            name: key,
+                            type: type
+                        };
+                    }
                 }
             }
 
-            types.push(obj.name);
+            types.push([obj.name, primaryKey]);
           
             schema += '}\n\n';
         }
 
         schema += 'type Query {\n';
+        
+        for (const [type, pk] of types) {
+            const camelCasedType = this.camelcase(type);
+            const pluralType = pluralize(camelCasedType);
 
-        for (const type of types) {
-            schema += `    ${this.camelcase(type)}: [${type}!]\n`
+            // All objects
+            queryResolver[pluralType] = (_, args) => {
+                let result = realm.objects(type);
+                if (args.query) {
+                    result = result.filtered(args.query);
+                }
+
+                if (args.sortBy) {
+                    let descending = args.descending || false;
+                    result = result.sorted(args.sortBy, descending);
+                }
+                
+                return result;
+            };
+
+            // TODO: limit sortBy to only valid properties
+            schema += `    ${pluralType}(query: String, sortBy: String, descending: Boolean): [${type}!]\n`;
+
+            // Get by PK
+            if (pk) {
+                queryResolver[camelCasedType] = (_, args) => realm.objectForPrimaryKey(type, args[pk.name]);
+                schema += `    ${camelCasedType}(${pk.name}: ${pk.type}): ${type}\n`;
+            }
         }
 
         schema += '}';
 
-        return buildSchema(schema);
+        return makeExecutableSchema({ 
+            typeDefs: schema,
+            resolvers: {
+                Query: queryResolver
+            }
+        });
     }
 
     getTypeString(prop: string, optional: Boolean): string {
@@ -126,13 +161,13 @@ export class GraphQLService {
                 result = 'Boolean';
                 break;
             case 'int':
-            case 'date':
                 result = 'Int';
                 break;
             case 'float':
             case 'double':
                 result = 'Float';
                 break;
+            case 'date':
             case 'string':
             case 'data':
                 result = 'String';
