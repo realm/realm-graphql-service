@@ -1,9 +1,9 @@
 import { BaseRoute, Get, Post, ServerStarted, Server, Request, Response } from 'realm-object-server'
 import { graphqlExpress, ExpressHandler, graphiqlExpress } from 'apollo-server-express';
-import { DocumentNode, GraphQLError, GraphQLSchema, GraphQLObjectType, buildSchema } from 'graphql';
-import { ObjectSchemaProperty, ObjectSchema, Results } from 'realm';
+import { GraphQLSchema } from 'graphql';
+import { ObjectSchemaProperty, ObjectSchema } from 'realm';
 import { makeExecutableSchema } from 'graphql-tools';
-import { IResolverObject, IResolvers } from 'graphql-tools/dist/Interfaces';
+import { IResolverObject } from 'graphql-tools/dist/Interfaces';
 import * as pluralize from 'pluralize'
 
 interface SchemaTypes {
@@ -89,6 +89,7 @@ export class GraphQLService {
         let mutation = 'type Mutation {\n';
         
         for (const [type, pk] of types) {
+            // TODO: this assumes types are PascalCase
             const camelCasedType = this.camelcase(type);
             const pluralType = pluralize(camelCasedType);
 
