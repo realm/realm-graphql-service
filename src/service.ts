@@ -243,14 +243,12 @@ export class GraphQLService {
                 break;
             case 'list':
                 let innerType = this.getPrimitiveTypeString(prop.objectType, prop.optional);
-                if (!innerType) {
-                    innerType = prop.objectType;
-                }
                 type = `[${innerType}]`;
                 inputType = `[${innerType}Input]`;
                 break;
             default:
-                type = inputType = this.getPrimitiveTypeString(prop.type, prop.optional);
+                type = this.getPrimitiveTypeString(prop.type, prop.optional);
+                inputType = this.getPrimitiveTypeString(prop.type, true);
                 break;
         }
 
@@ -279,7 +277,7 @@ export class GraphQLService {
                 result = 'String';
                 break;
             default:
-                return null;
+                return prop;
         }
 
         if (!optional) {
