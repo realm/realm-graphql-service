@@ -153,6 +153,7 @@ export class GraphQLService {
 
             query += this.setupGetAllObjects(queryResolver, type, pluralType);
             mutation += this.setupAddObject(mutationResolver, type);
+            mutation += this.setupDeleteObjects(mutationResolver, type);
             subscription += this.setupSubscribeToQuery(subscriptionResolver, type, pluralType);
 
             // If object has PK, we add get by PK and update option.
@@ -282,6 +283,28 @@ export class GraphQLService {
         };
 
         return `delete${type}(${pk.name}: ${pk.type}): Boolean\n`;
+    }
+
+    private setupDeleteObjects(mutationResolver: IResolverObject, type: string): string {
+        let pluralType = pluralize(type);
+
+        mutationResolver[`delete${pluralType}`] = (_, args, context) => {
+            let realm: Realm = context.realm;
+            let result: number;
+            realm.write(() => {
+                let toDelete = realm.objects(type);
+                if (args.query) {
+                    toDelete = toDelete.filtered(args.query);
+                }
+
+                result = toDelete.length;
+                realm.delete(toDelete);
+            });
+
+            return result;
+        };
+
+        return `delete${pluralType}(query: String): Int\n`;
     }
 
     private async updateSubscriptionSchema(variables: any, context: any): Promise<GraphQLSchema> {
