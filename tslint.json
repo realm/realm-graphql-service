@@ -1,0 +1,28 @@
+{
+    "extends": [
+      "tslint:latest",
+      "tslint-eslint-rules"
+    ],
+    "rules": {
+      "object-literal-sort-keys": false,
+      "jsx-boolean-value": false,
+      "jsx-no-lambda": false,
+      "no-submodule-imports": [
+        true,
+        "graphql-tools"
+      ],
+      "no-implicit-dependencies": [
+        true,
+        "optional"
+      ],
+      "quotemark": [
+        true,
+        "single"
+      ],
+      "trailing-comma": {
+        "multiline": "never",
+        "singleline": "never"
+      }
+    }
+  }
+  
