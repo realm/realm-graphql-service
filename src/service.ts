@@ -1,4 +1,4 @@
-import { BaseRoute, Get, Post, ServerStarted, Server, Request, Response, ServerStartParams } from 'realm-object-server'
+import { BaseRoute, Get, Post, ServerStarted, Server, Request, Response, ServerStartParams, Stop, Upgrade, Promisify } from 'realm-object-server'
 import { graphqlExpress, ExpressHandler, graphiqlExpress } from 'apollo-server-express';
 import { PubSub, withFilter } from 'graphql-subscriptions';
 import { makeExecutableSchema } from 'graphql-tools';
@@ -31,8 +31,6 @@ interface SubscriptionDetails {
 
 @BaseRoute('/graphql')
 export class GraphQLService {
-    private port: number = 19080;
-
     private server: Server;
     private subscriptionServer: SubscriptionServer;
     private handler: ExpressHandler;
@@ -43,7 +41,8 @@ export class GraphQLService {
     @ServerStarted()
     serverStarted(server: Server) {
         this.server = server;
-
+        this.pubsub = new PubSub();
+        
         let runningParams: ServerStartParams = (this.server as any).runningParams;
         
         this.subscriptionServer = new SubscriptionServer({
@@ -68,10 +67,8 @@ export class GraphQLService {
                 params.context.operationId = message.id;
                 return params;
             }
-        }, { 
-            host: runningParams.address,
-            port: this.port,
-            path: `/subscriptions`
+        }, {
+            noServer: true,
         });
 
         this.handler = graphqlExpress(async (req, res) => {
@@ -96,14 +93,24 @@ export class GraphQLService {
 
             return {
                 endpointURL: `/graphql/${path}`,
-                subscriptionsEndpoint: `ws://${req.hostname}:${this.port}/subscriptions`,
+                subscriptionsEndpoint: `ws://${req.get('host')}/graphql/subscriptions`,
                 variables: {
                     realmPath: path
                 }
             };
         });
+    }
 
-        this.pubsub = new PubSub();
+    @Stop()
+    stop() {
+        this.subscriptionServer.close();
+    }
+
+    @Upgrade('/subscriptions')
+    async subscriptionHandler(req, socket, head) {
+        let wsServer = this.subscriptionServer.server;
+        let ws = await new Promise(resolve => wsServer.handleUpgrade(req, socket, head, resolve));
+        wsServer.emit('connection', ws, req);
     }
 
     @Get('/explore/:path')
