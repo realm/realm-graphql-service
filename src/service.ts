@@ -3,7 +3,7 @@ import { graphqlExpress, ExpressHandler, graphiqlExpress } from 'apollo-server-e
 import { PubSub, withFilter } from 'graphql-subscriptions';
 import { makeExecutableSchema } from 'graphql-tools';
 import { IResolverObject } from 'graphql-tools/dist/Interfaces';
-import { GraphQLSchema, execute, subscribe, buildSchema } from 'graphql';
+import { GraphQLSchema, execute, subscribe, buildSchema, GraphQLError } from 'graphql';
 import { ObjectSchemaProperty, ObjectSchema } from 'realm';
 import * as pluralize from 'pluralize'
 import { v4 } from 'uuid'
@@ -186,17 +186,7 @@ export class GraphQLService {
                 result = result.sorted(args.sortBy, descending);
             }
 
-            if (args.skip || args.take) {
-                let skip = args.skip || 0;
-                if (args.take) {
-                    result = result.slice(skip, args.take + skip);
-                }
-                else {
-                    result = result.slice(skip);
-                }
-            }
-            
-            return result;
+            return this.slice(result, args);
         };
 
         // TODO: limit sortBy to only valid properties
@@ -228,12 +218,12 @@ export class GraphQLService {
                     let descending = args.descending || false;
                     result = result.sorted(args.sortBy, descending);
                 }
-    
+
                 let opId = context.operationId;
                 this.querysubscriptions[opId] = result;
                 result.addListener((collection, change) => {
                     let payload = { };
-                    payload[pluralType] = collection;
+                    payload[pluralType] = this.slice(collection, args);
                     this.pubsub.publish(opId, payload);
                 });
     
@@ -242,7 +232,7 @@ export class GraphQLService {
         };
 
         // TODO: limit sortBy to only valid properties
-        return `${pluralType}(query: String, sortBy: String, descending: Boolean): [${type}!]\n`;
+        return `${pluralType}(query: String, sortBy: String, descending: Boolean, skip: Int, take: Int): [${type}!]\n`;
     }
 
     private setupGetObjectByPK(queryResolver: IResolverObject, type: string, camelCasedType: string, pk: PKInfo): string {
@@ -284,6 +274,9 @@ export class GraphQLService {
 
     private async updateSubscriptionSchema(variables: any, context: any): Promise<GraphQLSchema> {
         let path = variables.realmPath;
+        if (!path) {
+            throw new GraphQLError('Missing variable "realmPath". It is required for subscriptions.');
+        }
         let realm = await this.server.openRealm(path);
         let schema = this.getSchema(path, realm);
 
@@ -381,7 +374,20 @@ export class GraphQLService {
         return result;
     }
 
-    camelcase(value: string) : string {
+    private slice(collection: any, args: { [key: string]: any }): any {
+        if (args.skip || args.take) {
+            let skip = args.skip || 0;
+            if (args.take) {
+                return collection.slice(skip, args.take + skip);
+            }
+
+            return collection.slice(skip);
+        }
+
+        return collection;
+    }
+
+    private camelcase(value: string) : string {
         return value.charAt(0).toLowerCase() + value.slice(1);
     }
 }
