@@ -1,10 +1,13 @@
-import { BaseRoute, Get, Post, ServerStarted, Server, Request, Response } from 'realm-object-server'
+import { BaseRoute, Get, Post, ServerStarted, Server, Request, Response, Params, ServerStartParams } from 'realm-object-server'
 import { graphqlExpress, ExpressHandler, graphiqlExpress } from 'apollo-server-express';
-import { GraphQLSchema } from 'graphql';
-import { ObjectSchemaProperty, ObjectSchema } from 'realm';
+import { PubSub, withFilter } from 'graphql-subscriptions';
 import { makeExecutableSchema } from 'graphql-tools';
 import { IResolverObject } from 'graphql-tools/dist/Interfaces';
+import { GraphQLSchema, execute, subscribe } from 'graphql';
+import { ObjectSchemaProperty, ObjectSchema } from 'realm';
 import * as pluralize from 'pluralize'
+import { v4 } from 'uuid'
+import { SubscriptionServer } from 'subscriptions-transport-ws';
 
 interface SchemaTypes {
     type: string;
@@ -24,9 +27,12 @@ interface PropertySchemaInfo {
 
 @BaseRoute('/graphql')
 export class GraphQLService {
-    server: Server;
-    handler: ExpressHandler;
-    graphiql: ExpressHandler;
+    private server: Server;
+    private handler: ExpressHandler;
+    private graphiql: ExpressHandler;
+    private pubsub: PubSub;
+    private querysubscriptions: { [id: string]: Realm.Results<{}>; } = { };
+    private subscriptionServers: { [path: string]: SubscriptionServer  } = { };
     
     @ServerStarted()
     serverStarted(server: Server) {
@@ -35,19 +41,39 @@ export class GraphQLService {
         this.handler = graphqlExpress(async (req, res) => {
             let path = req.params['path'];
             let realm = await this.server.openRealm(path)
+            let schema = this.getSchema(path, realm);
+
+            if (!this.subscriptionServers[path]) {
+                // TODO: this is hacky due to SubscriptionServer requiring a schema rather
+                // than a function that resolves to a schema
+                let runningParams: ServerStartParams = (this.server as any).runningParams;
+                this.subscriptionServers[path] = new SubscriptionServer({
+                    execute: execute,
+                    subscribe: subscribe,
+                    schema: schema
+                }, { 
+                    host: runningParams.address,
+                    port: 19080,
+                    path: `/subscriptions`
+                });
+            }
 
             return {
-                schema: this.getSchema(path, realm)
+                schema: schema
             };
         });
 
         this.graphiql = graphiqlExpress(req => {
             let path = req.params['path'];
-            
+
             return {
-                endpointURL: `/graphql/${path}`
+                endpointURL: `/graphql/${path}`,
+                // TODO
+                subscriptionsEndpoint: `ws://${req.hostname}:${19080}/subscriptions`
             };
         });
+
+        this.pubsub = new PubSub();
     }
 
     @Get('/explore/:path')
@@ -75,6 +101,7 @@ export class GraphQLService {
         let types = new Array<[string, PKInfo]>();
         let queryResolver: IResolverObject = { };
         let mutationResolver: IResolverObject = { };
+        let subscriptionResolver: IResolverObject =  { };
         
         for (const obj of realm.schema) {
             let propertyInfo = this.getPropertySchema(obj);
@@ -87,6 +114,7 @@ export class GraphQLService {
 
         let query = 'type Query {\n';
         let mutation = 'type Mutation {\n';
+        let subscription = 'type Subscription {\n';
         
         for (const [type, pk] of types) {
             // TODO: this assumes types are PascalCase
@@ -95,6 +123,7 @@ export class GraphQLService {
 
             query += this.setupGetAllObjects(queryResolver, type, pluralType, realm);
             mutation += this.setupAddObject(mutationResolver, type, realm);
+            subscription += this.setupSubscribeToQuery(subscriptionResolver, type, pluralType, realm);
 
             // If object has PK, we add get by PK and update option.
             if (pk) {
@@ -105,16 +134,19 @@ export class GraphQLService {
         }
 
         query += '}\n\n';
-        mutation += '}';
+        mutation += '}\n\n';
+        subscription += '}'
 
         schema += query;
         schema += mutation;
+        schema += subscription;
 
         return makeExecutableSchema({ 
             typeDefs: schema,
             resolvers: {
                 Query: queryResolver,
-                Mutation: mutationResolver
+                Mutation: mutationResolver,
+                Subscription: subscriptionResolver
             },
         });
     }
@@ -159,6 +191,36 @@ export class GraphQLService {
         };
 
         return `add${type}(input: ${type}Input): ${type}\n`;
+    }
+
+    private setupSubscribeToQuery(subscriptionResolver: IResolverObject, type: string, pluralType: string, realm: Realm): string {
+        subscriptionResolver[pluralType] = {
+            subscribe: (_, args) => {
+                let result = realm.objects(type);
+                if (args.query) {
+                    result = result.filtered(args.query);
+                }
+    
+                if (args.sortBy) {
+                    let descending = args.descending || false;
+                    result = result.sorted(args.sortBy, descending);
+                }
+    
+                let uuid = v4();
+                this.querysubscriptions[uuid] = result;
+                result.addListener((collection, change) => {
+                    let payload = { };
+                    payload[pluralType] = collection;
+                    this.pubsub.publish(uuid, payload);
+                });
+    
+                // TODO
+                return this.pubsub.asyncIterator(uuid);
+            }
+        };
+
+        // TODO: limit sortBy to only valid properties
+        return `${pluralType}(query: String, sortBy: String, descending: Boolean): [${type}!]\n`;
     }
 
     private setupGetObjectByPK(queryResolver: IResolverObject, type: string, camelCasedType: string, realm: Realm, pk: PKInfo): string {
