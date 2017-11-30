@@ -24,6 +24,11 @@ interface PropertySchemaInfo {
     pk: PKInfo;
 }
 
+interface SubscriptionDetails {
+    results: Realm.Results<{}>;
+    realm: Realm;
+}
+
 @BaseRoute('/graphql')
 export class GraphQLService {
     private port: number = 19080;
@@ -33,7 +38,7 @@ export class GraphQLService {
     private handler: ExpressHandler;
     private graphiql: ExpressHandler;
     private pubsub: PubSub;
-    private querysubscriptions: { [id: string]: Realm.Results<{}> } = { };
+    private querysubscriptions: { [id: string]: SubscriptionDetails } = { };
     
     @ServerStarted()
     serverStarted(server: Server) {
@@ -52,11 +57,11 @@ export class GraphQLService {
                 return subscribe(schema, document, root, context, variables, operationName);
             },
             onOperationComplete: (socket, opid) => {
-                let results = this.querysubscriptions[opid];
-                if (results) {
-                    results.removeAllListeners();
+                let details = this.querysubscriptions[opid];
+                if (details) {
+                    details.results.removeAllListeners();
+                    details.realm.close();
                     delete this.querysubscriptions[opid];
-                    // TODO: close the Realm?
                 }
             },
             onOperation: (message, params, socket) => {
@@ -73,6 +78,10 @@ export class GraphQLService {
             let path = req.params['path'];
             let realm = await this.server.openRealm(path)
             let schema = this.getSchema(path, realm);
+
+            res.once('finish', () => {
+                realm.close();
+            });
 
             return {
                 schema: schema,
@@ -207,7 +216,8 @@ export class GraphQLService {
     private setupSubscribeToQuery(subscriptionResolver: IResolverObject, type: string, pluralType: string): string {
         subscriptionResolver[pluralType] = {
             subscribe: (_, args, context) => {
-                let result = context.realm.objects(type);
+                let realm: Realm = context.realm;
+                let result = realm.objects(type);
                 if (args.query) {
                     result = result.filtered(args.query);
                 }
@@ -218,7 +228,11 @@ export class GraphQLService {
                 }
 
                 let opId = context.operationId;
-                this.querysubscriptions[opId] = result;
+                this.querysubscriptions[opId] = {
+                    results: result,
+                    realm: realm
+                };
+
                 result.addListener((collection, change) => {
                     let payload = { };
                     payload[pluralType] = this.slice(collection, args);
