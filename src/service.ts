@@ -1,10 +1,12 @@
-import { BaseRoute, Get, Post, ServerStarted, Server, Request, Response } from 'realm-object-server'
+import { BaseRoute, Get, Post, ServerStarted, Server, Request, Response, Params, ServerStartParams } from 'realm-object-server'
 import { graphqlExpress, ExpressHandler, graphiqlExpress } from 'apollo-server-express';
-import { GraphQLSchema } from 'graphql';
-import { ObjectSchemaProperty, ObjectSchema } from 'realm';
+import { PubSub, withFilter } from 'graphql-subscriptions';
 import { makeExecutableSchema } from 'graphql-tools';
 import { IResolverObject } from 'graphql-tools/dist/Interfaces';
+import { GraphQLSchema, execute, subscribe, buildSchema, GraphQLError } from 'graphql';
+import { ObjectSchemaProperty, ObjectSchema } from 'realm';
 import * as pluralize from 'pluralize'
+import { SubscriptionServer } from 'subscriptions-transport-ws';
 
 interface SchemaTypes {
     type: string;
@@ -24,30 +26,75 @@ interface PropertySchemaInfo {
 
 @BaseRoute('/graphql')
 export class GraphQLService {
-    server: Server;
-    handler: ExpressHandler;
-    graphiql: ExpressHandler;
+    private port: number = 19080;
+
+    private server: Server;
+    private subscriptionServer: SubscriptionServer;
+    private handler: ExpressHandler;
+    private graphiql: ExpressHandler;
+    private pubsub: PubSub;
+    private querysubscriptions: { [id: string]: Realm.Results<{}>; } = { };
     
     @ServerStarted()
     serverStarted(server: Server) {
         this.server = server;
 
+        let runningParams: ServerStartParams = (this.server as any).runningParams;
+        
+        this.subscriptionServer = new SubscriptionServer({
+            schema: buildSchema('type Query{\nfoo:Int\n}'),
+            execute: async (_, document, root, context, variables, operationName) => {
+                let schema = await this.updateSubscriptionSchema(variables, context);
+                return execute(schema, document, root, context, variables, operationName);
+            },
+            subscribe: async (oldSchema, document, root, context, variables, operationName) => {
+                let schema = await this.updateSubscriptionSchema(variables, context);
+                return subscribe(schema, document, root, context, variables, operationName);
+            },
+            onOperationComplete: (socket, opid) => {
+                let results = this.querysubscriptions[opid];
+                if (results) {
+                    results.removeAllListeners();
+                    delete this.querysubscriptions[opid];
+                    // TODO: close the Realm?
+                }
+            },
+            onOperation: (message, params, socket) => {
+                params.context.operationId = message.id;
+                return params;
+            }
+        }, { 
+            host: runningParams.address,
+            port: this.port,
+            path: `/subscriptions`
+        });
+
         this.handler = graphqlExpress(async (req, res) => {
             let path = req.params['path'];
             let realm = await this.server.openRealm(path)
+            let schema = this.getSchema(path, realm);
 
             return {
-                schema: this.getSchema(path, realm)
+                schema: schema,
+                context: {
+                    realm: realm
+                }
             };
         });
 
         this.graphiql = graphiqlExpress(req => {
             let path = req.params['path'];
-            
+
             return {
-                endpointURL: `/graphql/${path}`
+                endpointURL: `/graphql/${path}`,
+                subscriptionsEndpoint: `ws://${req.hostname}:${this.port}/subscriptions`,
+                variables: {
+                    realmPath: path
+                }
             };
         });
+
+        this.pubsub = new PubSub();
     }
 
     @Get('/explore/:path')
@@ -75,6 +122,7 @@ export class GraphQLService {
         let types = new Array<[string, PKInfo]>();
         let queryResolver: IResolverObject = { };
         let mutationResolver: IResolverObject = { };
+        let subscriptionResolver: IResolverObject =  { };
         
         for (const obj of realm.schema) {
             let propertyInfo = this.getPropertySchema(obj);
@@ -87,41 +135,46 @@ export class GraphQLService {
 
         let query = 'type Query {\n';
         let mutation = 'type Mutation {\n';
+        let subscription = 'type Subscription {\n';
         
         for (const [type, pk] of types) {
             // TODO: this assumes types are PascalCase
             const camelCasedType = this.camelcase(type);
             const pluralType = pluralize(camelCasedType);
 
-            query += this.setupGetAllObjects(queryResolver, type, pluralType, realm);
-            mutation += this.setupAddObject(mutationResolver, type, realm);
+            query += this.setupGetAllObjects(queryResolver, type, pluralType);
+            mutation += this.setupAddObject(mutationResolver, type);
+            subscription += this.setupSubscribeToQuery(subscriptionResolver, type, pluralType);
 
             // If object has PK, we add get by PK and update option.
             if (pk) {
-                query += this.setupGetObjectByPK(queryResolver, type, camelCasedType, realm, pk);
-                mutation += this.setupUpdateObject(mutationResolver, type, realm);
-                mutation += this.setupDeleteObject(mutationResolver, type, realm, pk);
+                query += this.setupGetObjectByPK(queryResolver, type, camelCasedType, pk);
+                mutation += this.setupUpdateObject(mutationResolver, type);
+                mutation += this.setupDeleteObject(mutationResolver, type, pk);
             }
         }
 
         query += '}\n\n';
-        mutation += '}';
+        mutation += '}\n\n';
+        subscription += '}'
 
         schema += query;
         schema += mutation;
+        schema += subscription;
 
         return makeExecutableSchema({ 
             typeDefs: schema,
             resolvers: {
                 Query: queryResolver,
-                Mutation: mutationResolver
+                Mutation: mutationResolver,
+                Subscription: subscriptionResolver
             },
         });
     }
 
-    private setupGetAllObjects(queryResolver: IResolverObject, type: string, pluralType: string, realm: Realm): string {
-        queryResolver[pluralType] = (_, args) => {
-            let result: any = realm.objects(type);
+    private setupGetAllObjects(queryResolver: IResolverObject, type: string, pluralType: string): string {
+        queryResolver[pluralType] = (_, args, context) => {
+            let result: any = context.realm.objects(type);
             if (args.query) {
                 result = result.filtered(args.query);
             }
@@ -131,28 +184,18 @@ export class GraphQLService {
                 result = result.sorted(args.sortBy, descending);
             }
 
-            if (args.skip || args.take) {
-                let skip = args.skip || 0;
-                if (args.take) {
-                    result = result.slice(skip, args.take + skip);
-                }
-                else {
-                    result = result.slice(skip);
-                }
-            }
-            
-            return result;
+            return this.slice(result, args);
         };
 
         // TODO: limit sortBy to only valid properties
         return `${pluralType}(query: String, sortBy: String, descending: Boolean, skip: Int, take: Int): [${type}!]\n`;
     }
 
-    private setupAddObject(mutationResolver: IResolverObject, type: string, realm: Realm): string {
-        mutationResolver[`add${type}`] = (_, args) => {
+    private setupAddObject(mutationResolver: IResolverObject, type: string): string {
+        mutationResolver[`add${type}`] = (_, args, context) => {
             let result: any;
-            realm.write(() => {
-                result = realm.create(type, args.input);
+            context.realm.write(() => {
+                result = context.realm.create(type, args.input);
             });
 
             return result;
@@ -161,18 +204,47 @@ export class GraphQLService {
         return `add${type}(input: ${type}Input): ${type}\n`;
     }
 
-    private setupGetObjectByPK(queryResolver: IResolverObject, type: string, camelCasedType: string, realm: Realm, pk: PKInfo): string {
-        queryResolver[camelCasedType] = (_, args) => realm.objectForPrimaryKey(type, args[pk.name]);
+    private setupSubscribeToQuery(subscriptionResolver: IResolverObject, type: string, pluralType: string): string {
+        subscriptionResolver[pluralType] = {
+            subscribe: (_, args, context) => {
+                let result = context.realm.objects(type);
+                if (args.query) {
+                    result = result.filtered(args.query);
+                }
+    
+                if (args.sortBy) {
+                    let descending = args.descending || false;
+                    result = result.sorted(args.sortBy, descending);
+                }
+
+                let opId = context.operationId;
+                this.querysubscriptions[opId] = result;
+                result.addListener((collection, change) => {
+                    let payload = { };
+                    payload[pluralType] = this.slice(collection, args);
+                    this.pubsub.publish(opId, payload);
+                });
+    
+                return this.pubsub.asyncIterator(opId);
+            }
+        };
+
+        // TODO: limit sortBy to only valid properties
+        return `${pluralType}(query: String, sortBy: String, descending: Boolean, skip: Int, take: Int): [${type}!]\n`;
+    }
+
+    private setupGetObjectByPK(queryResolver: IResolverObject, type: string, camelCasedType: string, pk: PKInfo): string {
+        queryResolver[camelCasedType] = (_, args, context) => context.realm.objectForPrimaryKey(type, args[pk.name]);
         return `${camelCasedType}(${pk.name}: ${pk.type}): ${type}\n`;
     }
 
-    private setupUpdateObject(mutationResolver: IResolverObject, type: string, realm: Realm): string {
+    private setupUpdateObject(mutationResolver: IResolverObject, type: string): string {
         // TODO: validate that the PK is set
         // TODO: validate that object exists, otherwise it's addOrUpdate not just update
-        mutationResolver[`update${type}`] = (_, args) => {
+        mutationResolver[`update${type}`] = (_, args, context) => {
             let result: any;
-            realm.write(() => {
-                result = realm.create(type, args.input, true);
+            context.realm.write(() => {
+                result = context.realm.create(type, args.input, true);
             });
 
             return result;
@@ -181,13 +253,13 @@ export class GraphQLService {
         return `update${type}(input: ${type}Input): ${type}\n`;
     }
 
-    private setupDeleteObject(mutationResolver: IResolverObject, type: string, realm: Realm, pk: PKInfo): string {
-        mutationResolver[`delete${type}`] = (_, args) => {
+    private setupDeleteObject(mutationResolver: IResolverObject, type: string, pk: PKInfo): string {
+        mutationResolver[`delete${type}`] = (_, args, context) => {
             let result: boolean = false;
-            realm.write(() => {
-                let obj = realm.objectForPrimaryKey(type, args[pk.name]);
+            context.realm.write(() => {
+                let obj = context.realm.objectForPrimaryKey(type, args[pk.name]);
                 if (obj) {
-                    realm.delete(obj);
+                    context.realm.delete(obj);
                     result = true;
                 }
             });
@@ -196,6 +268,19 @@ export class GraphQLService {
         };
 
         return `delete${type}(${pk.name}: ${pk.type}): Boolean\n`;
+    }
+
+    private async updateSubscriptionSchema(variables: any, context: any): Promise<GraphQLSchema> {
+        let path = variables.realmPath;
+        if (!path) {
+            throw new GraphQLError('Missing variable "realmPath". It is required for subscriptions.');
+        }
+        let realm = await this.server.openRealm(path);
+        let schema = this.getSchema(path, realm);
+
+        context.realm = realm;
+
+        return schema;
     }
 
     private getPropertySchema(obj: ObjectSchema): PropertySchemaInfo {
@@ -287,7 +372,20 @@ export class GraphQLService {
         return result;
     }
 
-    camelcase(value: string) : string {
+    private slice(collection: any, args: { [key: string]: any }): any {
+        if (args.skip || args.take) {
+            let skip = args.skip || 0;
+            if (args.take) {
+                return collection.slice(skip, args.take + skip);
+            }
+
+            return collection.slice(skip);
+        }
+
+        return collection;
+    }
+
+    private camelcase(value: string) : string {
         return value.charAt(0).toLowerCase() + value.slice(1);
     }
 }
