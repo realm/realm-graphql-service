@@ -1,4 +1,4 @@
-import { BaseRoute, Get, Post, ServerStarted, Server, Request, Response, Params, ServerStartParams } from 'realm-object-server'
+import { BaseRoute, Get, Post, ServerStarted, Server, Request, Response, ServerStartParams } from 'realm-object-server'
 import { graphqlExpress, ExpressHandler, graphiqlExpress } from 'apollo-server-express';
 import { PubSub, withFilter } from 'graphql-subscriptions';
 import { makeExecutableSchema } from 'graphql-tools';
@@ -33,7 +33,7 @@ export class GraphQLService {
     private handler: ExpressHandler;
     private graphiql: ExpressHandler;
     private pubsub: PubSub;
-    private querysubscriptions: { [id: string]: Realm.Results<{}>; } = { };
+    private querysubscriptions: { [id: string]: Realm.Results<{}> } = { };
     
     @ServerStarted()
     serverStarted(server: Server) {
