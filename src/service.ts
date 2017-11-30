@@ -6,9 +6,7 @@ import { IResolverObject } from 'graphql-tools/dist/Interfaces';
 import { GraphQLSchema, execute, subscribe, buildSchema, GraphQLError } from 'graphql';
 import { ObjectSchemaProperty, ObjectSchema } from 'realm';
 import * as pluralize from 'pluralize'
-import { v4 } from 'uuid'
 import { SubscriptionServer } from 'subscriptions-transport-ws';
-import { reset } from 'colors';
 
 interface SchemaTypes {
     type: string;
