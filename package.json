@@ -24,9 +24,6 @@
             "check:package-lock"
         ]
     },
-    "prettier": {
-        "tabWidth": 4
-    },
     "devDependencies": {
         "@types/chai": "^4.0.4",
         "@types/faker": "^4.1.2",

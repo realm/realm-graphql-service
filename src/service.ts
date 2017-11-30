@@ -1,4 +1,4 @@
-import { BaseRoute, Get, Post, ServerStarted, Server, Request, Response, ServerStartParams, Stop, Upgrade, Promisify } from 'realm-object-server'
+import { BaseRoute, Get, Post, ServerStarted, Server, Request, Response, ServerStartParams, Stop, Upgrade, Promisify } from 'realm-object-server';
 import { graphqlExpress, ExpressHandler, graphiqlExpress } from 'apollo-server-express';
 import { PubSub, withFilter } from 'graphql-subscriptions';
 import { makeExecutableSchema } from 'graphql-tools';

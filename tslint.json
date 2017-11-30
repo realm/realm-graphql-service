@@ -24,8 +24,7 @@
           "singleQuote": true,
           "trailingComma": "all"
         }
-      ],
-      "indent": [true, "spaces", 4]
+      ]
     }
   }
   
