@@ -51,7 +51,7 @@ export class GraphQLService {
   private querysubscriptions: { [id: string]: ISubscriptionDetails } = {};
 
   @ServerStarted()
-  private serverStarted( server: Server) {
+  private serverStarted(server: Server) {
     this.server = server;
     this.pubsub = new PubSub();
 
