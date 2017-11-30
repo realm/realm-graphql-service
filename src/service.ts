@@ -1,30 +1,42 @@
-import { BaseRoute, Get, Post, ServerStarted, Server, Request, Response, ServerStartParams, Stop, Upgrade, Promisify } from 'realm-object-server';
-import { graphqlExpress, ExpressHandler, graphiqlExpress } from 'apollo-server-express';
+import { ExpressHandler, graphiqlExpress, graphqlExpress } from 'apollo-server-express';
+import { buildSchema, execute, GraphQLError, GraphQLSchema, subscribe } from 'graphql';
 import { PubSub, withFilter } from 'graphql-subscriptions';
 import { makeExecutableSchema } from 'graphql-tools';
 import { IResolverObject } from 'graphql-tools/dist/Interfaces';
-import { GraphQLSchema, execute, subscribe, buildSchema, GraphQLError } from 'graphql';
-import { ObjectSchemaProperty, ObjectSchema } from 'realm';
-import * as pluralize from 'pluralize'
+import * as pluralize from 'pluralize';
+import { ObjectSchema, ObjectSchemaProperty } from 'realm';
+import {
+    BaseRoute,
+    Get,
+    Post,
+    Promisify,
+    Request,
+    Response,
+    Server,
+    ServerStarted,
+    ServerStartParams,
+    Stop,
+    Upgrade
+} from 'realm-object-server';
 import { SubscriptionServer } from 'subscriptions-transport-ws';
 
-interface SchemaTypes {
+interface ISchemaTypes {
   type: string;
   inputType: string;
 }
 
-interface PKInfo { 
+interface IPKInfo {
   name: string;
   type: string;
 }
 
-interface PropertySchemaInfo {
+interface IPropertySchemaInfo {
   propertySchema: string;
   inputPropertySchema: string;
-  pk: PKInfo;
+  pk: IPKInfo;
 }
 
-interface SubscriptionDetails {
+interface ISubscriptionDetails {
   results: Realm.Results<{}>;
   realm: Realm;
 }
@@ -36,60 +48,63 @@ export class GraphQLService {
   private handler: ExpressHandler;
   private graphiql: ExpressHandler;
   private pubsub: PubSub;
-  private querysubscriptions: { [id: string]: SubscriptionDetails } = { };
-  
+  private querysubscriptions: { [id: string]: ISubscriptionDetails } = {};
+
   @ServerStarted()
-  serverStarted(server: Server) {
+  private serverStarted(server: Server) {
     this.server = server;
     this.pubsub = new PubSub();
-    
-    let runningParams: ServerStartParams = (this.server as any).runningParams;
-    
-    this.subscriptionServer = new SubscriptionServer({
-      schema: buildSchema('type Query{\nfoo:Int\n}'),
-      execute: async (_, document, root, context, variables, operationName) => {
-        let schema = await this.updateSubscriptionSchema(variables, context);
-        return execute(schema, document, root, context, variables, operationName);
-      },
-      subscribe: async (oldSchema, document, root, context, variables, operationName) => {
-        let schema = await this.updateSubscriptionSchema(variables, context);
-        return subscribe(schema, document, root, context, variables, operationName);
-      },
-      onOperationComplete: (socket, opid) => {
-        let details = this.querysubscriptions[opid];
-        if (details) {
-          details.results.removeAllListeners();
-          details.realm.close();
-          delete this.querysubscriptions[opid];
+
+    const runningParams: ServerStartParams = (this.server as any).runningParams;
+
+    this.subscriptionServer = new SubscriptionServer(
+      {
+        schema: buildSchema('type Query{\nfoo:Int\n}'),
+        execute: async (_, document, root, context, variables, operationName) => {
+          const schema = await this.updateSubscriptionSchema(variables, context);
+          return execute(schema, document, root, context, variables, operationName);
+        },
+        subscribe: async (_, document, root, context, variables, operationName) => {
+          const schema = await this.updateSubscriptionSchema(variables, context);
+          return subscribe(schema, document, root, context, variables, operationName);
+        },
+        onOperationComplete: (socket, opid) => {
+          const details = this.querysubscriptions[opid];
+          if (details) {
+            details.results.removeAllListeners();
+            details.realm.close();
+            delete this.querysubscriptions[opid];
+          }
+        },
+        onOperation: (message, params, socket) => {
+          params.context.operationId = message.id;
+          return params;
         }
       },
-      onOperation: (message, params, socket) => {
-        params.context.operationId = message.id;
-        return params;
+      {
+        noServer: true
       }
-    }, {
-      noServer: true,
-    });
+    );
 
     this.handler = graphqlExpress(async (req, res) => {
-      let path = req.params['path'];
-      let realm = await this.server.openRealm(path)
-      let schema = this.getSchema(path, realm);
+      const path = req.params.path;
+      const realm = await this.server.openRealm(path);
+      const schema = this.getSchema(path, realm);
 
       res.once('finish', () => {
         realm.close();
       });
 
       return {
-        schema: schema,
+        schema,
         context: {
-          realm: realm
+          realm
         }
       };
     });
 
-    this.graphiql = graphiqlExpress(req => {
-      let path = req.params['path'];
+    this.graphiql = graphiqlExpress((req) => {
+      const path = req.params.path;
 
       return {
         endpointURL: `/graphql/${path}`,
@@ -102,49 +117,49 @@ export class GraphQLService {
   }
 
   @Stop()
-  stop() {
+  private stop() {
     this.subscriptionServer.close();
   }
 
   @Upgrade('/subscriptions')
-  async subscriptionHandler(req, socket, head) {
-    let wsServer = this.subscriptionServer.server;
-    let ws = await new Promise(resolve => wsServer.handleUpgrade(req, socket, head, resolve));
+  private async subscriptionHandler(req, socket, head) {
+    const wsServer = this.subscriptionServer.server;
+    const ws = await new Promise((resolve) => wsServer.handleUpgrade(req, socket, head, resolve));
     wsServer.emit('connection', ws, req);
   }
 
   @Get('/explore/:path')
-  getExplore(@Request() req, @Response() res) {
+  private getExplore(@Request() req, @Response() res) {
     this.graphiql(req, res, null);
   }
 
   @Post('/explore/:path')
-  postExplore(@Request() req, @Response() res) {
+  private postExplore(@Request() req, @Response() res) {
     this.graphiql(req, res, null);
   }
 
   @Get('/:path')
-  get(@Request() req, @Response() res) {
+  private get(@Request() req, @Response() res) {
     this.handler(req, res, null);
   }
 
   @Post('/:path')
-  post(@Request() req, @Response() res) {
+  private post(@Request() req, @Response() res) {
     this.handler(req, res, null);
   }
 
-  getSchema(path: string, realm: Realm) : GraphQLSchema {
+  private getSchema(path: string, realm: Realm): GraphQLSchema {
     let schema = '';
-    let types = new Array<[string, PKInfo]>();
-    let queryResolver: IResolverObject = { };
-    let mutationResolver: IResolverObject = { };
-    let subscriptionResolver: IResolverObject =  { };
+    const types = new Array<[string, IPKInfo]>();
+    const queryResolver: IResolverObject = {};
+    const mutationResolver: IResolverObject = {};
+    const subscriptionResolver: IResolverObject = {};
 
     for (const obj of realm.schema) {
-      let propertyInfo = this.getPropertySchema(obj);
+      const propertyInfo = this.getPropertySchema(obj);
 
       types.push([obj.name, propertyInfo.pk]);
-      
+
       schema += `type ${obj.name} { \n${propertyInfo.propertySchema}}\n\n`;
       schema += `input ${obj.name}Input { \n${propertyInfo.inputPropertySchema}}\n\n`;
     }
@@ -152,7 +167,7 @@ export class GraphQLService {
     let query = 'type Query {\n';
     let mutation = 'type Mutation {\n';
     let subscription = 'type Subscription {\n';
-    
+
     for (const [type, pk] of types) {
       // TODO: this assumes types are PascalCase
       const camelCasedType = this.camelcase(type);
@@ -173,13 +188,13 @@ export class GraphQLService {
 
     query += '}\n\n';
     mutation += '}\n\n';
-    subscription += '}'
+    subscription += '}';
 
     schema += query;
     schema += mutation;
     schema += subscription;
 
-    return makeExecutableSchema({ 
+    return makeExecutableSchema({
       typeDefs: schema,
       resolvers: {
         Query: queryResolver,
@@ -197,7 +212,7 @@ export class GraphQLService {
       }
 
       if (args.sortBy) {
-        let descending = args.descending || false;
+        const descending = args.descending || false;
         result = result.sorted(args.sortBy, descending);
       }
 
@@ -224,29 +239,29 @@ export class GraphQLService {
   private setupSubscribeToQuery(subscriptionResolver: IResolverObject, type: string, pluralType: string): string {
     subscriptionResolver[pluralType] = {
       subscribe: (_, args, context) => {
-        let realm: Realm = context.realm;
+        const realm: Realm = context.realm;
         let result = realm.objects(type);
         if (args.query) {
           result = result.filtered(args.query);
         }
-  
+
         if (args.sortBy) {
-          let descending = args.descending || false;
+          const descending = args.descending || false;
           result = result.sorted(args.sortBy, descending);
         }
 
-        let opId = context.operationId;
+        const opId = context.operationId;
         this.querysubscriptions[opId] = {
           results: result,
-          realm: realm
+          realm
         };
 
         result.addListener((collection, change) => {
-          let payload = { };
+          const payload = {};
           payload[pluralType] = this.slice(collection, args);
           this.pubsub.publish(opId, payload);
         });
-  
+
         return this.pubsub.asyncIterator(opId);
       }
     };
@@ -255,7 +270,12 @@ export class GraphQLService {
     return `${pluralType}(query: String, sortBy: String, descending: Boolean, skip: Int, take: Int): [${type}!]\n`;
   }
 
-  private setupGetObjectByPK(queryResolver: IResolverObject, type: string, camelCasedType: string, pk: PKInfo): string {
+  private setupGetObjectByPK(
+      queryResolver: IResolverObject,
+      type: string,
+      camelCasedType: string,
+      pk: IPKInfo
+    ): string {
     queryResolver[camelCasedType] = (_, args, context) => context.realm.objectForPrimaryKey(type, args[pk.name]);
     return `${camelCasedType}(${pk.name}: ${pk.type}): ${type}\n`;
   }
@@ -275,11 +295,11 @@ export class GraphQLService {
     return `update${type}(input: ${type}Input): ${type}\n`;
   }
 
-  private setupDeleteObject(mutationResolver: IResolverObject, type: string, pk: PKInfo): string {
+  private setupDeleteObject(mutationResolver: IResolverObject, type: string, pk: IPKInfo): string {
     mutationResolver[`delete${type}`] = (_, args, context) => {
       let result: boolean = false;
       context.realm.write(() => {
-        let obj = context.realm.objectForPrimaryKey(type, args[pk.name]);
+        const obj = context.realm.objectForPrimaryKey(type, args[pk.name]);
         if (obj) {
           context.realm.delete(obj);
           result = true;
@@ -293,10 +313,10 @@ export class GraphQLService {
   }
 
   private setupDeleteObjects(mutationResolver: IResolverObject, type: string): string {
-    let pluralType = pluralize(type);
+    const pluralType = pluralize(type);
 
     mutationResolver[`delete${pluralType}`] = (_, args, context) => {
-      let realm: Realm = context.realm;
+      const realm: Realm = context.realm;
       let result: number;
       realm.write(() => {
         let toDelete = realm.objects(type);
@@ -315,22 +335,22 @@ export class GraphQLService {
   }
 
   private async updateSubscriptionSchema(variables: any, context: any): Promise<GraphQLSchema> {
-    let path = variables.realmPath;
+    const path = variables.realmPath;
     if (!path) {
       throw new GraphQLError('Missing variable "realmPath". It is required for subscriptions.');
     }
-    let realm = await this.server.openRealm(path);
-    let schema = this.getSchema(path, realm);
+    const realm = await this.server.openRealm(path);
+    const schema = this.getSchema(path, realm);
 
     context.realm = realm;
 
     return schema;
   }
 
-  private getPropertySchema(obj: ObjectSchema): PropertySchemaInfo {
+  private getPropertySchema(obj: ObjectSchema): IPropertySchemaInfo {
     let schemaProperties = '';
     let inputSchemaProperties = '';
-    let primaryKey: PKInfo = null;
+    let primaryKey: IPKInfo = null;
 
     for (const key in obj.properties) {
       if (!obj.properties.hasOwnProperty(key)) {
@@ -342,10 +362,10 @@ export class GraphQLService {
         continue;
       }
 
-      let types = this.getTypeString(prop);
+      const types = this.getTypeString(prop);
 
       schemaProperties += `${key}: ${types.type}\n`;
-      inputSchemaProperties += `${key}: ${types.inputType}\n`
+      inputSchemaProperties += `${key}: ${types.inputType}\n`;
 
       if (key === obj.primaryKey) {
         primaryKey = {
@@ -362,7 +382,7 @@ export class GraphQLService {
     };
   }
 
-  private getTypeString(prop: ObjectSchemaProperty): SchemaTypes {
+  private getTypeString(prop: ObjectSchemaProperty): ISchemaTypes {
     let type: string;
     let inputType: string;
     switch (prop.type) {
@@ -371,7 +391,7 @@ export class GraphQLService {
         inputType = `${prop.objectType}Input`;
         break;
       case 'list':
-        let innerType = this.getPrimitiveTypeString(prop.objectType, prop.optional);
+        const innerType = this.getPrimitiveTypeString(prop.objectType, prop.optional);
         type = `[${innerType}]`;
         inputType = `[${innerType}Input]`;
         break;
@@ -382,12 +402,12 @@ export class GraphQLService {
     }
 
     return {
-      type: type,
-      inputType: inputType
-    }
+      type,
+      inputType
+    };
   }
 
-  private getPrimitiveTypeString(prop: string, optional: Boolean): string {
+  private getPrimitiveTypeString(prop: string, optional: boolean): string {
     let result = '';
     switch (prop) {
       case 'bool':
@@ -418,7 +438,7 @@ export class GraphQLService {
 
   private slice(collection: any, args: { [key: string]: any }): any {
     if (args.skip || args.take) {
-      let skip = args.skip || 0;
+      const skip = args.skip || 0;
       if (args.take) {
         return collection.slice(skip, args.take + skip);
       }
@@ -429,7 +449,7 @@ export class GraphQLService {
     return collection;
   }
 
-  private camelcase(value: string) : string {
+  private camelcase(value: string): string {
     return value.charAt(0).toLowerCase() + value.slice(1);
   }
 }
