@@ -40,7 +40,7 @@ To mutate an object, start with a `mutation` node. All possible mutation methods
   
 ### Subscribing
 
-To subscribe for change notifications, start with `subscription` node. The subscription endpoint is `ws://ROS-URL:19080/subscriptions` (eventually the port will be the same as the one used by ROS). Because schemas are different for different realms, you'll need to provide a [variable](http://graphql.org/learn/queries/#variables), called `realmPath` and set it to the path of the Realm you'd like to subscribe to. It will be used to dynamically resolve the schema upon subscription.
+To subscribe for change notifications, start with `subscription` node. The subscription endpoint is `ws://ROS-URL:ROS-PORT/subscriptions`. Because schemas are different for different realms, you'll need to provide a [variable](http://graphql.org/learn/queries/#variables), called `realmPath` and set it to the path of the Realm you'd like to subscribe to. It will be used to dynamically resolve the schema upon subscription.
 
 - Subscribing for queries: all object types have a pluralized node, e.g. `users`, `accounts`, etc. Every time an item is added, deleted, or modified in the dataset, the updated state will be pushed via the subscription socket. The node accepts the following optional arguments:
   - `query`: a verbatim [realm.js query](https://realm.io/docs/javascript/latest/#filtering) that will be used to filter the returned dataset.
