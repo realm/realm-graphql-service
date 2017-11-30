@@ -3,7 +3,7 @@ import { graphqlExpress, ExpressHandler, graphiqlExpress } from 'apollo-server-e
 import { PubSub, withFilter } from 'graphql-subscriptions';
 import { makeExecutableSchema } from 'graphql-tools';
 import { IResolverObject } from 'graphql-tools/dist/Interfaces';
-import { GraphQLSchema, execute, subscribe } from 'graphql';
+import { GraphQLSchema, execute, subscribe, buildSchema } from 'graphql';
 import { ObjectSchemaProperty, ObjectSchema } from 'realm';
 import * as pluralize from 'pluralize'
 import { v4 } from 'uuid'
@@ -27,36 +27,47 @@ interface PropertySchemaInfo {
 
 @BaseRoute('/graphql')
 export class GraphQLService {
+    private port: number = 19080;
+
     private server: Server;
+    private subscriptionServer: SubscriptionServer;
     private handler: ExpressHandler;
     private graphiql: ExpressHandler;
     private pubsub: PubSub;
     private querysubscriptions: { [id: string]: Realm.Results<{}>; } = { };
-    private subscriptionServers: { [path: string]: SubscriptionServer  } = { };
     
     @ServerStarted()
     serverStarted(server: Server) {
         this.server = server;
 
+        let runningParams: ServerStartParams = (this.server as any).runningParams;
+        
+        this.subscriptionServer = new SubscriptionServer({
+            schema: buildSchema('type Query{\nfoo:Int\n}'),
+            execute: async (oldSchema, document, rootValue, contextValue, variableValues, operationName) => {
+                let path = variableValues.realmPath;
+                let realm = await this.server.openRealm(path);
+                let schema = this.getSchema(path, realm);
+
+                return execute(schema, document, rootValue, contextValue, variableValues, operationName);
+            },
+            subscribe: async (oldSchema, document, rootValue, contextValue, variableValues, operationName) => {
+                let path = variableValues.realmPath;
+                let realm = await this.server.openRealm(path);
+                let schema = this.getSchema(path, realm);
+
+                return subscribe(schema, document, rootValue, contextValue, variableValues, operationName);
+            }
+        }, { 
+            host: runningParams.address,
+            port: this.port,
+            path: `/subscriptions`
+        });
+
         this.handler = graphqlExpress(async (req, res) => {
             let path = req.params['path'];
             let realm = await this.server.openRealm(path)
             let schema = this.getSchema(path, realm);
-
-            if (!this.subscriptionServers[path]) {
-                // TODO: this is hacky due to SubscriptionServer requiring a schema rather
-                // than a function that resolves to a schema
-                let runningParams: ServerStartParams = (this.server as any).runningParams;
-                this.subscriptionServers[path] = new SubscriptionServer({
-                    execute: execute,
-                    subscribe: subscribe,
-                    schema: schema
-                }, { 
-                    host: runningParams.address,
-                    port: 19080,
-                    path: `/subscriptions`
-                });
-            }
 
             return {
                 schema: schema
@@ -68,8 +79,10 @@ export class GraphQLService {
 
             return {
                 endpointURL: `/graphql/${path}`,
-                // TODO
-                subscriptionsEndpoint: `ws://${req.hostname}:${19080}/subscriptions`
+                subscriptionsEndpoint: `ws://${req.hostname}:${this.port}/subscriptions`,
+                variables: {
+                    realmPath: path
+                }
             };
         });
 
