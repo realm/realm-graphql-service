@@ -90,11 +90,11 @@ export class GraphQLService {
       {
         schema: buildSchema('type Query{\nfoo:Int\n}'),
         execute: async (_, document, root, context, variables, operationName) => {
-          const schema = await this.updateSubscriptionSchema(variables, context);
+          const schema = await this.updateSubscriptionSchema(context);
           return execute(schema, document, root, context, variables, operationName);
         },
         subscribe: async (_, document, root, context, variables, operationName) => {
-          const schema = await this.updateSubscriptionSchema(variables, context);
+          const schema = await this.updateSubscriptionSchema(context);
           return subscribe(schema, document, root, context, variables, operationName);
         },
         onOperationComplete: (socket, opid) => {
@@ -107,6 +107,10 @@ export class GraphQLService {
         },
         onOperation: (message, params, socket) => {
           params.context.operationId = message.id;
+
+          // HACK: socket.realmPath is set in subscriptionHandler to the
+          // :path route parameter
+          params.context.realmPath = socket.realmPath;
           return params;
         }
       },
@@ -137,10 +141,7 @@ export class GraphQLService {
 
       return {
         endpointURL: `/graphql/${encodeURIComponent(path)}`,
-        subscriptionsEndpoint: `ws://${req.get('host')}/graphql/subscriptions`,
-        variables: {
-          realmPath: path
-        }
+        subscriptionsEndpoint: `ws://${req.get('host')}/graphql/${encodeURIComponent(path)}`
       };
     });
   }
@@ -150,10 +151,15 @@ export class GraphQLService {
     this.subscriptionServer.close();
   }
 
-  @Upgrade('/subscriptions')
+  @Upgrade('/:path')
   private async subscriptionHandler(req, socket, head) {
     const wsServer = this.subscriptionServer.server;
-    const ws = await new Promise((resolve) => wsServer.handleUpgrade(req, socket, head, resolve));
+    const ws = await new Promise<any>((resolve) => wsServer.handleUpgrade(req, socket, head, resolve));
+
+    // HACK: we're putting the realmPath on the socket client
+    // and resolving it in subscriptionServer.onOperation to
+    // populate it in the subscription context.
+    ws.realmPath = req.params.path;
     wsServer.emit('connection', ws, req);
   }
 
@@ -373,10 +379,10 @@ export class GraphQLService {
     return `delete${pluralType}(query: String): Int\n`;
   }
 
-  private async updateSubscriptionSchema(variables: any, context: any): Promise<GraphQLSchema> {
-    const path = variables.realmPath;
+  private async updateSubscriptionSchema(context: any): Promise<GraphQLSchema> {
+    const path = context.realmPath;
     if (!path) {
-      throw new GraphQLError('Missing variable "realmPath". It is required for subscriptions.');
+      throw new GraphQLError('Missing "realmPath" from context. It is required for subscriptions.');
     }
     const realm = await this.server.openRealm(path);
     const schema = this.getSchema(path, realm);
