@@ -3,6 +3,7 @@ import { buildSchema, execute, GraphQLError, GraphQLSchema, subscribe } from 'gr
 import { PubSub, withFilter } from 'graphql-subscriptions';
 import { makeExecutableSchema } from 'graphql-tools';
 import { IResolverObject } from 'graphql-tools/dist/Interfaces';
+import * as LRU from 'lru-cache';
 import * as pluralize from 'pluralize';
 import { ObjectSchema, ObjectSchemaProperty } from 'realm';
 import {
@@ -41,6 +42,11 @@ interface ISubscriptionDetails {
   realm: Realm;
 }
 
+export interface IGraphQLServiceSettings {
+  cacheSchema?: boolean;
+  maxSchemasInCache?: number;
+}
+
 @BaseRoute('/graphql')
 export class GraphQLService {
   private server: Server;
@@ -49,6 +55,15 @@ export class GraphQLService {
   private graphiql: ExpressHandler;
   private pubsub: PubSub;
   private querysubscriptions: { [id: string]: ISubscriptionDetails } = {};
+  private schemaCache: LRU.Cache<string, GraphQLSchema>;
+
+  constructor(settings?: IGraphQLServiceSettings) {
+    if (settings.cacheSchema) {
+      this.schemaCache = new LRU({
+        max: settings.maxSchemasInCache || 1000
+      });
+    }
+  }
 
   @ServerStarted()
   private serverStarted(server: Server) {
@@ -107,7 +122,7 @@ export class GraphQLService {
       const path = req.params.path;
 
       return {
-        endpointURL: `/graphql/${path}`,
+        endpointURL: `/graphql/${encodeURIComponent(path)}`,
         subscriptionsEndpoint: `ws://${req.get('host')}/graphql/subscriptions`,
         variables: {
           realmPath: path
@@ -149,6 +164,10 @@ export class GraphQLService {
   }
 
   private getSchema(path: string, realm: Realm): GraphQLSchema {
+    if (this.schemaCache && this.schemaCache.has(path)) {
+      return this.schemaCache.get(path);
+    }
+
     let schema = '';
     const types = new Array<[string, IPKInfo]>();
     const queryResolver: IResolverObject = {};
@@ -194,7 +213,7 @@ export class GraphQLService {
     schema += mutation;
     schema += subscription;
 
-    return makeExecutableSchema({
+    const result = makeExecutableSchema({
       typeDefs: schema,
       resolvers: {
         Query: queryResolver,
@@ -202,6 +221,12 @@ export class GraphQLService {
         Subscription: subscriptionResolver
       },
     });
+
+    if (this.schemaCache) {
+      this.schemaCache.set(path, result);
+    }
+
+    return result;
   }
 
   private setupGetAllObjects(queryResolver: IResolverObject, type: string, pluralType: string): string {
@@ -393,7 +418,21 @@ export class GraphQLService {
       case 'list':
         const innerType = this.getPrimitiveTypeString(prop.objectType, prop.optional);
         type = `[${innerType}]`;
-        inputType = `[${innerType}Input]`;
+
+        switch (prop.objectType) {
+          case 'bool':
+          case 'int':
+          case 'float':
+          case 'double':
+          case 'date':
+          case 'string':
+          case 'data':
+            inputType = type;
+            break;
+          default:
+            inputType = `[${innerType}Input]`;
+            break;
+        }
         break;
       default:
         type = this.getPrimitiveTypeString(prop.type, prop.optional);
