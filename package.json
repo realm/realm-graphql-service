@@ -9,6 +9,7 @@
         "start": "npm run build && node dist/index.js",
         "test": "mocha --opts ./mocha.opts",
         "lint": "tslint --project tsconfig.json 'src/**/*.ts' 'src/**/*.tsx' && echo 'Everything looks good!'",
+        "lint-fix": "tslint --project tsconfig.json --fix 'src/**/*.ts' 'src/**/*.tsx'",
         "precommit": "lint-staged"
     },
     "author": "",
@@ -26,6 +27,7 @@
         "@types/chai": "^4.0.4",
         "@types/faker": "^4.1.2",
         "@types/graphql": "^0.11.6",
+        "@types/lru-cache": "^4.1.0",
         "@types/mocha": "^2.2.44",
         "@types/pluralize": "0.0.28",
         "@types/reconnectingwebsocket": "^1.0.1",
@@ -49,6 +51,7 @@
         "graphql": "^0.11.7",
         "graphql-subscriptions": "^0.5.5",
         "graphql-tools": "^2.10.0",
+        "lru-cache": "^4.1.1",
         "pluralize": "^7.0.0",
         "reconnecting-websocket": "^3.2.2",
         "subscriptions-transport-ws": "^0.9.1",
