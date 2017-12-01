@@ -20,31 +20,44 @@ import {
     Upgrade
 } from 'realm-object-server';
 import { SubscriptionServer } from 'subscriptions-transport-ws';
+import { setTimeout } from 'timers';
 
-interface ISchemaTypes {
+interface SchemaTypes {
   type: string;
   inputType: string;
 }
 
-interface IPKInfo {
+interface PKInfo {
   name: string;
   type: string;
 }
 
-interface IPropertySchemaInfo {
+interface PropertySchemaInfo {
   propertySchema: string;
   inputPropertySchema: string;
-  pk: IPKInfo;
+  pk: PKInfo;
 }
 
-interface ISubscriptionDetails {
+interface SubscriptionDetails {
   results: Realm.Results<{}>;
   realm: Realm;
 }
 
-export interface IGraphQLServiceSettings {
-  cacheSchema?: boolean;
-  maxSchemasInCache?: number;
+export interface GraphQLServiceSettings {
+  /**
+   * Settings controlling the schema caching strategy. If not specified,
+   * Realm schemas will not be cached and instead generated on every request.
+   * This is useful while developing and schemas may change frequently, but
+   * drastically reduces performance.
+   */
+  schemaCacheSettings?: SchemaCacheSettings;
+}
+
+export interface SchemaCacheSettings {
+  /**
+   * The number of schemas to keep in the cache. Default is 1000.
+   */
+  max?: number;
 }
 
 @BaseRoute('/graphql')
@@ -54,13 +67,14 @@ export class GraphQLService {
   private handler: ExpressHandler;
   private graphiql: ExpressHandler;
   private pubsub: PubSub;
-  private querysubscriptions: { [id: string]: ISubscriptionDetails } = {};
+  private querysubscriptions: { [id: string]: SubscriptionDetails } = {};
   private schemaCache: LRU.Cache<string, GraphQLSchema>;
+  private realmCacheTTL: number = 300000; // 5 minutes
 
-  constructor(settings?: IGraphQLServiceSettings) {
-    if (settings.cacheSchema) {
+  constructor(settings?: GraphQLServiceSettings) {
+    if (settings.schemaCacheSettings) {
       this.schemaCache = new LRU({
-        max: settings.maxSchemasInCache || 1000
+        max: settings.schemaCacheSettings.max || 1000
       });
     }
   }
@@ -87,7 +101,7 @@ export class GraphQLService {
           const details = this.querysubscriptions[opid];
           if (details) {
             details.results.removeAllListeners();
-            details.realm.close();
+            setTimeout(() => details.realm.close(), this.realmCacheTTL);
             delete this.querysubscriptions[opid];
           }
         },
@@ -107,7 +121,7 @@ export class GraphQLService {
       const schema = this.getSchema(path, realm);
 
       res.once('finish', () => {
-        realm.close();
+        setTimeout(() => realm.close(), this.realmCacheTTL);
       });
 
       return {
@@ -169,7 +183,7 @@ export class GraphQLService {
     }
 
     let schema = '';
-    const types = new Array<[string, IPKInfo]>();
+    const types = new Array<[string, PKInfo]>();
     const queryResolver: IResolverObject = {};
     const mutationResolver: IResolverObject = {};
     const subscriptionResolver: IResolverObject = {};
@@ -299,7 +313,7 @@ export class GraphQLService {
       queryResolver: IResolverObject,
       type: string,
       camelCasedType: string,
-      pk: IPKInfo
+      pk: PKInfo
     ): string {
     queryResolver[camelCasedType] = (_, args, context) => context.realm.objectForPrimaryKey(type, args[pk.name]);
     return `${camelCasedType}(${pk.name}: ${pk.type}): ${type}\n`;
@@ -320,7 +334,7 @@ export class GraphQLService {
     return `update${type}(input: ${type}Input): ${type}\n`;
   }
 
-  private setupDeleteObject(mutationResolver: IResolverObject, type: string, pk: IPKInfo): string {
+  private setupDeleteObject(mutationResolver: IResolverObject, type: string, pk: PKInfo): string {
     mutationResolver[`delete${type}`] = (_, args, context) => {
       let result: boolean = false;
       context.realm.write(() => {
@@ -372,10 +386,10 @@ export class GraphQLService {
     return schema;
   }
 
-  private getPropertySchema(obj: ObjectSchema): IPropertySchemaInfo {
+  private getPropertySchema(obj: ObjectSchema): PropertySchemaInfo {
     let schemaProperties = '';
     let inputSchemaProperties = '';
-    let primaryKey: IPKInfo = null;
+    let primaryKey: PKInfo = null;
 
     for (const key in obj.properties) {
       if (!obj.properties.hasOwnProperty(key)) {
@@ -407,7 +421,7 @@ export class GraphQLService {
     };
   }
 
-  private getTypeString(prop: ObjectSchemaProperty): ISchemaTypes {
+  private getTypeString(prop: ObjectSchemaProperty): SchemaTypes {
     let type: string;
     let inputType: string;
     switch (prop.type) {

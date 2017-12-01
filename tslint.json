@@ -22,7 +22,11 @@
       "trailing-comma": {
         "multiline": "never",
         "singleline": "never"
-      }
+      },
+      "interface-name": [
+        true,
+        "never-prefix"
+      ]
     }
   }
   

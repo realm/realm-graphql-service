@@ -7,7 +7,7 @@ import { GraphQLService } from './service';
 const server = new BasicServer();
 
 server.addService(new GraphQLService({
-  cacheSchema: true
+  schemaCacheSettings: {}
 }));
 
 server
