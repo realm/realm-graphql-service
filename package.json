@@ -16,7 +16,8 @@
     "license": "ISC",
     "optionalDependencies": {
         "realm-object-server": ">=2.0.21",
-        "realm": ">=2.0.11"
+        "realm": ">=2.0.11",
+        "express": "4.15.3"
     },
     "lint-staged": {
         "*.{ts,tsx}": [
