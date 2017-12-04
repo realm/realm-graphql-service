@@ -1,23 +1,40 @@
 {
-    "name": "@realm/graphql-access",
+    "name": "realm-object-server-graphql",
     "version": "1.0.0",
-    "description": "",
-    "main": "src/index.js",
+    "description": "GraphQL API service for the Realm Object Server",
+    "repository": "https://github.com/realm/realm-object-server-graphql",
+    "license": "SEE LICENSE IN https://realm.io/legal/developer-license-terms/",
+    "homepage": "https://realm.io",
+    "author": {
+      "name": "Realm",
+      "email": "help@realm.io",
+      "url": "https://realm.io"
+    },
+    "main": "dist/service.js",
+    "typings": "dist/service.d.ts",
+    "keywords": [
+        "Realm",
+        "Object",
+        "Server",
+        "GraphQL",
+        "Rest"
+    ],
+    "files": [
+        "dist/service*"
+    ],
     "scripts": {
         "build": "rm -rf dist; ./node_modules/.bin/tsc",
         "clean": "rm -rf dist",
         "start": "npm run build && node dist/index.js",
         "test": "mocha --opts ./mocha.opts",
-        "lint": "tslint --project tsconfig.json 'src/**/*.ts' 'src/**/*.tsx' && echo 'Everything looks good!'",
+        "lint": "tslint --project tsconfig.json 'src/**/*.ts' 'src/**/*.tsx'",
         "lint-fix": "tslint --project tsconfig.json --fix 'src/**/*.ts' 'src/**/*.tsx'",
         "precommit": "lint-staged"
     },
-    "author": "",
-    "license": "ISC",
-    "optionalDependencies": {
+    "peerDependencies": {
         "realm-object-server": ">=2.0.21",
         "realm": ">=2.0.11",
-        "express": "4.15.3"
+        "express": ">=4.15.3"
     },
     "lint-staged": {
         "*.{ts,tsx}": [
