@@ -12,6 +12,99 @@ The GraphQL endpoint is mounted on `/graphql/:path` where `path` is the path of 
 
 The GraphiQL (visual exploratory tool) endpoint is mounted on `/graphql/explore/:path` where `path` again is the path of the Realm.
 
+## Authentication
+
+By default, all endpoints and actions are authenticated. If you wish to disable authentication while developing, you can pass `disableAuthentication: true` to the service constructor.
+
+### Obtaining an Access Token
+
+Authentication is done with an Access Token, obtained by executing POST request against the `/auth` endpoint:
+
+First, you'll need to login the user with their provider. For example, when authenticating with username/password, pass the following payload:
+
+```js
+{
+  "app_id":"",
+  "provider":"password",
+  "data":"MY-USERNAME",
+  "user_info": {
+    "register":false,
+    "password":"MY-PASSWORD"
+  }
+}
+```
+
+The response will look something like:
+
+```js
+{
+  "refresh_token": {
+    "token":"VERY-LONG-TOKEN-HERE"
+  }
+}
+```
+
+We'll need the refresh token to obtain the access token by posting again to `/auth`:
+
+```js
+{
+  "app_id":"",
+  "provider":"realm", // Note provider is 'realm'
+  "data":"REFRESH_TOKEN.TOKEN", // Token from previous response
+  "path":"REALM-PATH" // Path of the realm you want to access, e.g. '/user-id/tickets
+}
+```
+
+The response will now contain:
+
+```js
+{
+  "access_token": {
+    "token":"VERY-LONG-TOKEN-HERE"
+  },
+  "token_data": {
+    "expires": 1512402618 // unix timestamp
+  }
+}
+```
+
+We'll need this access token to perform all graphql actions. This token must be refreshed before it expires using the refresh token obtained earlier to avoid getting '401: Unauthorized' responses.
+
+### Query and Mutation
+
+Since the query and mutation actions are regular GET/POST requests, the authentication happens with a standard `Authorization` header:
+
+```
+Authorization: ACCESS_TOKEN.TOKEN
+```
+
+### Subscription
+
+Subscriptions use websocket, which requires that authentication happens after the connection is established. Before sending any graphql-related messages, you'll need to send an object message, containing an `authToken` field set to the access token:
+
+```js
+{
+  authToken: ACCESS_TOKEN.TOKEN
+}
+```
+
+If you're using the [Apollo client](https://github.com/apollographql/apollo-client) library, you can set it as `connectionParams` when creating subscription client:
+
+```js
+const wsLink = new WebSocketLink({
+  uri: `ws://localhost:9080/graphql/REALM-PATH`,
+  options: {
+    reconnect: true,
+    connectionParams: {
+        authToken: 'ACCESS_TOKEN.TOKEN',
+    },
+});
+```
+
+Check the [Apollo docs](https://github.com/apollographql/apollo-client/blob/master/docs/source/features/subscriptions.md#authentication-over-websocket) for more info.
+
+**IMPORTANT NOTE ON TOKEN VALIDATION**: The access token for subscriptions is validated only when the socket connection is established and not when emitting notifications by the server. This means that it's the client's responsibility to terminate the connection if the user logs out or loses access to the Realm. 
+
 ## Exploring
 
 Run the app and navigate to http://localhost:9080/graphql/explore/%2F__admin - this will open the GraphiQL explorer for the `__admin` Realm.
