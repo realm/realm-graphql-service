@@ -63,6 +63,20 @@ export interface GraphQLServiceSettings {
    * handle authentication for you, so there's no need to disable it.
    */
   disableAuthentication?: boolean;
+
+  /**
+   * Disables the grahpiql explorer endpoint (/grahpql/explore).
+   */
+  disableExplorer?: boolean;
+
+  /**
+   * The number in milliseconds which a Realm will be kept open after a request
+   * has completed. Higher values mean that more Realms will be kept in the cache,
+   * drastically reducing the response times of requests hitting "warm" Realms.
+   * This, however, comes at the cost of increased memory usage. Default is
+   * 120000 (2 minutes).
+   */
+  realmCacheMaxAge?: number;
 }
 
 export interface SchemaCacheSettings {
@@ -72,7 +86,7 @@ export interface SchemaCacheSettings {
   max?: number;
 
   /**
-   * The time to live for schemas in cache. Default is infinite.
+   * The max age for schemas in cache. Default is infinite.
    */
   maxAge?: number;
 }
@@ -86,8 +100,9 @@ export class GraphQLService {
   private pubsub: PubSub;
   private querysubscriptions: { [id: string]: SubscriptionDetails } = {};
   private schemaCache: LRU.Cache<string, GraphQLSchema>;
-  private realmCacheTTL: number = 300000; // 5 minutes
+  private realmCacheTTL: number;
   private disableAuthentication: boolean;
+  private disableExplorer: boolean;
 
   constructor(settings?: GraphQLServiceSettings) {
     if (settings.schemaCacheSettings) {
@@ -98,6 +113,8 @@ export class GraphQLService {
     }
 
     this.disableAuthentication = settings.disableAuthentication || false;
+    this.disableExplorer = settings.disableExplorer || false;
+    this.realmCacheTTL = settings.realmCacheMaxAge || 120000;
   }
 
   @ServerStarted()
@@ -210,12 +227,20 @@ export class GraphQLService {
 
   @Get('/explore/:path')
   private getExplore(@Request() req: express.Request, @Response() res: express.Response) {
+    if (this.disableExplorer) {
+      throw new errors.realm.AccessDenied();
+    }
+
     this.authenticate((req as any).authToken, req.params.path);
     this.graphiql(req, res, null);
   }
 
   @Post('/explore/:path')
   private postExplore(@Request() req: express.Request, @Response() res: express.Response) {
+    if (this.disableExplorer) {
+      throw new errors.realm.AccessDenied();
+    }
+
     this.authenticate((req as any).authToken, req.params.path);
     this.graphiql(req, res, null);
   }
