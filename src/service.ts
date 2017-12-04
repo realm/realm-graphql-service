@@ -1,4 +1,5 @@
 import { ExpressHandler, graphiqlExpress, graphqlExpress } from 'apollo-server-express';
+import * as express from 'express';
 import { buildSchema, execute, GraphQLError, GraphQLSchema, subscribe } from 'graphql';
 import { PubSub, withFilter } from 'graphql-subscriptions';
 import { makeExecutableSchema } from 'graphql-tools';
@@ -7,7 +8,9 @@ import * as LRU from 'lru-cache';
 import * as pluralize from 'pluralize';
 import { ObjectSchema, ObjectSchemaProperty } from 'realm';
 import {
+    AccessToken,
     BaseRoute,
+    errors,
     Get,
     Post,
     Promisify,
@@ -17,6 +20,7 @@ import {
     ServerStarted,
     ServerStartParams,
     Stop,
+    Token,
     Upgrade
 } from 'realm-object-server';
 import { SubscriptionServer } from 'subscriptions-transport-ws';
@@ -51,6 +55,14 @@ export interface GraphQLServiceSettings {
    * drastically reduces performance.
    */
   schemaCacheSettings?: SchemaCacheSettings;
+
+  /**
+   * Disables authentication for graphql endpoints. This may be useful when
+   * you are developing the app and want a more relaxed exploring experience.
+   * If you're using studio to explore the graphql API and responses, it will
+   * handle authentication for you, so there's no need to disable it.
+   */
+  disableAuthentication?: boolean;
 }
 
 export interface SchemaCacheSettings {
@@ -58,6 +70,11 @@ export interface SchemaCacheSettings {
    * The number of schemas to keep in the cache. Default is 1000.
    */
   max?: number;
+
+  /**
+   * The time to live for schemas in cache. Default is infinite.
+   */
+  maxAge?: number;
 }
 
 @BaseRoute('/graphql')
@@ -70,13 +87,17 @@ export class GraphQLService {
   private querysubscriptions: { [id: string]: SubscriptionDetails } = {};
   private schemaCache: LRU.Cache<string, GraphQLSchema>;
   private realmCacheTTL: number = 300000; // 5 minutes
+  private disableAuthentication: boolean;
 
   constructor(settings?: GraphQLServiceSettings) {
     if (settings.schemaCacheSettings) {
       this.schemaCache = new LRU({
-        max: settings.schemaCacheSettings.max || 1000
+        max: settings.schemaCacheSettings.max || 1000,
+        maxAge: settings.schemaCacheSettings.maxAge
       });
     }
+
+    this.disableAuthentication = settings.disableAuthentication || false;
   }
 
   @ServerStarted()
@@ -112,6 +133,21 @@ export class GraphQLService {
           // :path route parameter
           params.context.realmPath = socket.realmPath;
           return params;
+        },
+        onConnect: async (authPayload, socket) => {
+          let accessToken: Token;
+          if (!this.disableAuthentication) {
+            if (!authPayload || !authPayload.authToken) {
+              throw new errors.realm.MissingParameters('Missing \'connectionParams.authToken\'.');
+            }
+
+            accessToken = Token.parse(authPayload.authToken, this.server.publicKey);
+            this.authenticate(accessToken, socket.realmPath);
+          }
+
+          return {
+            accessToken
+          };
         }
       },
       {
@@ -131,7 +167,8 @@ export class GraphQLService {
       return {
         schema,
         context: {
-          realm
+          realm,
+          accessToken: (req as any).authToken
         }
       };
     });
@@ -139,10 +176,18 @@ export class GraphQLService {
     this.graphiql = graphiqlExpress((req) => {
       const path = req.params.path;
 
-      return {
+      const result: any = {
         endpointURL: `/graphql/${encodeURIComponent(path)}`,
         subscriptionsEndpoint: `ws://${req.get('host')}/graphql/${encodeURIComponent(path)}`
       };
+
+      const token = req.get('authorization');
+      if (token) {
+        result.passHeader = `'Authorization': '${token}'`;
+        result.websocketConnectionParams = { authToken: token };
+      }
+
+      return result;
     });
   }
 
@@ -164,23 +209,67 @@ export class GraphQLService {
   }
 
   @Get('/explore/:path')
-  private getExplore(@Request() req, @Response() res) {
+  private getExplore(@Request() req: express.Request, @Response() res: express.Response) {
+    this.authenticate((req as any).authToken, req.params.path);
     this.graphiql(req, res, null);
   }
 
   @Post('/explore/:path')
-  private postExplore(@Request() req, @Response() res) {
+  private postExplore(@Request() req: express.Request, @Response() res: express.Response) {
+    this.authenticate((req as any).authToken, req.params.path);
     this.graphiql(req, res, null);
   }
 
   @Get('/:path')
-  private get(@Request() req, @Response() res) {
+  private get(@Request() req: express.Request, @Response() res: express.Response) {
+    this.authenticate((req as any).authToken, req.params.path);
     this.handler(req, res, null);
   }
 
   @Post('/:path')
-  private post(@Request() req, @Response() res) {
+  private post(@Request() req: express.Request, @Response() res: express.Response) {
+    this.authenticate((req as any).authToken, req.params.path);
     this.handler(req, res, null);
+  }
+
+  private authenticate(authToken: any, path: string) {
+    if (this.disableAuthentication) {
+      return;
+    }
+
+    if (!authToken) {
+      throw new errors.realm.AccessDenied('Authorization header is missing.');
+    }
+
+    if (!(authToken instanceof AccessToken)) {
+      throw new errors.realm.AccessDenied('Authorization header should contain a valid access token.');
+    }
+
+    const accessToken = authToken as AccessToken;
+    if (accessToken.path !== path) {
+      throw new errors.realm.InvalidCredentials('The access token doesn\'t grant access to the requested path.');
+    }
+  }
+
+  private validateAccess(context: any, access: string) {
+    if (this.disableAuthentication) {
+      return;
+    }
+
+    const token = context.accessToken as AccessToken;
+    if (!token ||  !token.access || token.access.indexOf(access) < 0) {
+      throw new errors.realm.InvalidCredentials({
+        title: `The current user doesn\'t have '${access}' access.`
+      });
+    }
+  }
+
+  private validateRead(context: any) {
+    this.validateAccess(context, 'download');
+  }
+
+  private validateWrite(context: any) {
+    this.validateAccess(context, 'upload');
   }
 
   private getSchema(path: string, realm: Realm): GraphQLSchema {
@@ -251,6 +340,8 @@ export class GraphQLService {
 
   private setupGetAllObjects(queryResolver: IResolverObject, type: string, pluralType: string): string {
     queryResolver[pluralType] = (_, args, context) => {
+      this.validateRead(context);
+
       let result: any = context.realm.objects(type);
       if (args.query) {
         result = result.filtered(args.query);
@@ -270,6 +361,8 @@ export class GraphQLService {
 
   private setupAddObject(mutationResolver: IResolverObject, type: string): string {
     mutationResolver[`add${type}`] = (_, args, context) => {
+      this.validateWrite(context);
+
       let result: any;
       context.realm.write(() => {
         result = context.realm.create(type, args.input);
@@ -284,6 +377,8 @@ export class GraphQLService {
   private setupSubscribeToQuery(subscriptionResolver: IResolverObject, type: string, pluralType: string): string {
     subscriptionResolver[pluralType] = {
       subscribe: (_, args, context) => {
+        this.validateRead(context);
+
         const realm: Realm = context.realm;
         let result = realm.objects(type);
         if (args.query) {
@@ -315,13 +410,12 @@ export class GraphQLService {
     return `${pluralType}(query: String, sortBy: String, descending: Boolean, skip: Int, take: Int): [${type}!]\n`;
   }
 
-  private setupGetObjectByPK(
-      queryResolver: IResolverObject,
-      type: string,
-      camelCasedType: string,
-      pk: PKInfo
-    ): string {
-    queryResolver[camelCasedType] = (_, args, context) => context.realm.objectForPrimaryKey(type, args[pk.name]);
+  private setupGetObjectByPK(queryResolver: IResolverObject, type: string, camelCasedType: string, pk: PKInfo): string {
+    queryResolver[camelCasedType] = (_, args, context) => {
+      this.validateRead(context);
+
+      context.realm.objectForPrimaryKey(type, args[pk.name]);
+    };
     return `${camelCasedType}(${pk.name}: ${pk.type}): ${type}\n`;
   }
 
@@ -329,6 +423,8 @@ export class GraphQLService {
     // TODO: validate that the PK is set
     // TODO: validate that object exists, otherwise it's addOrUpdate not just update
     mutationResolver[`update${type}`] = (_, args, context) => {
+      this.validateWrite(context);
+
       let result: any;
       context.realm.write(() => {
         result = context.realm.create(type, args.input, true);
@@ -342,6 +438,8 @@ export class GraphQLService {
 
   private setupDeleteObject(mutationResolver: IResolverObject, type: string, pk: PKInfo): string {
     mutationResolver[`delete${type}`] = (_, args, context) => {
+      this.validateWrite(context);
+
       let result: boolean = false;
       context.realm.write(() => {
         const obj = context.realm.objectForPrimaryKey(type, args[pk.name]);
@@ -361,6 +459,8 @@ export class GraphQLService {
     const pluralType = pluralize(type);
 
     mutationResolver[`delete${pluralType}`] = (_, args, context) => {
+      this.validateWrite(context);
+
       const realm: Realm = context.realm;
       let result: number;
       realm.write(() => {
