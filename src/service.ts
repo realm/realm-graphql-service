@@ -196,15 +196,17 @@ export class GraphQLService {
     this.graphiql = graphiqlExpress((req) => {
       const path = req.params.path;
 
+      const protocol = req.protocol === 'https' ? 'wss' : 'ws';
+
       const result: any = {
         endpointURL: `/graphql/${encodeURIComponent(path)}`,
-        subscriptionsEndpoint: `ws://${req.get('host')}/graphql/${encodeURIComponent(path)}`
+        subscriptionsEndpoint: `${protocol}://${req.get('host')}/graphql/${encodeURIComponent(path)}`
       };
 
       const token = req.get('authorization');
       if (token) {
         result.passHeader = `'Authorization': '${token}'`;
-        result.websocketConnectionParams = { authToken: token };
+        result.websocketConnectionParams = { token };
       }
 
       return result;
@@ -267,6 +269,11 @@ export class GraphQLService {
 
     if (!authToken) {
       throw new errors.realm.AccessDenied('Authorization header is missing.');
+    }
+
+    // If admin token, assume user is valid
+    if (typeof authToken.isAdminToken === 'function' && authToken.isAdminToken()) {
+      return;
     }
 
     if (!(authToken instanceof AccessToken)) {
