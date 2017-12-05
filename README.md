@@ -84,7 +84,7 @@ Subscriptions use websocket, which requires that authentication happens after th
 
 ```js
 {
-  authToken: ACCESS_TOKEN.TOKEN
+  token: ACCESS_TOKEN.TOKEN
 }
 ```
 
@@ -96,7 +96,7 @@ const wsLink = new WebSocketLink({
   options: {
     reconnect: true,
     connectionParams: {
-        authToken: 'ACCESS_TOKEN.TOKEN',
+        token: 'ACCESS_TOKEN.TOKEN',
     },
 });
 ```

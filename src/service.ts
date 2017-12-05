@@ -21,6 +21,7 @@ import {
     ServerStartParams,
     Stop,
     Token,
+    TokenValidator,
     Upgrade
 } from 'realm-object-server';
 import { SubscriptionServer } from 'subscriptions-transport-ws';
@@ -154,11 +155,11 @@ export class GraphQLService {
         onConnect: async (authPayload, socket) => {
           let accessToken: Token;
           if (!this.disableAuthentication) {
-            if (!authPayload || !authPayload.authToken) {
-              throw new errors.realm.MissingParameters('Missing \'connectionParams.authToken\'.');
+            if (!authPayload || !authPayload.token) {
+              throw new errors.realm.MissingParameters('Missing \'connectionParams.token\'.');
             }
 
-            accessToken = Token.parse(authPayload.authToken, this.server.publicKey);
+            accessToken = this.server.tokenValidator.parse(authPayload.token);
             this.authenticate(accessToken, socket.realmPath);
           }
 
