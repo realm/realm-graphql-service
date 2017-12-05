@@ -106,6 +106,8 @@ export class GraphQLService {
   private disableExplorer: boolean;
 
   constructor(settings?: GraphQLServiceSettings) {
+    settings = settings || {};
+
     if (settings.schemaCacheSettings) {
       this.schemaCache = new LRU({
         max: settings.schemaCacheSettings.max || 1000,
