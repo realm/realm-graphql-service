@@ -271,17 +271,8 @@ export class GraphQLService {
       throw new errors.realm.AccessDenied('Authorization header is missing.');
     }
 
-    // If admin token, assume user is valid
-    if (typeof authToken.isAdminToken === 'function' && authToken.isAdminToken()) {
-      return;
-    }
-
-    if (!(authToken instanceof AccessToken)) {
-      throw new errors.realm.AccessDenied('Authorization header should contain a valid access token.');
-    }
-
     const accessToken = authToken as AccessToken;
-    if (accessToken.path !== path) {
+    if (accessToken.path !== path && !accessToken.isAdminToken()) {
       throw new errors.realm.InvalidCredentials('The access token doesn\'t grant access to the requested path.');
     }
   }
