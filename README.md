@@ -4,7 +4,30 @@ This repo hosts a service that can be added to a Realm Object Server instance to
 
 ## Usage
 
-Clone the repo and run `npm start`. To debug the app, open the folder in Visual Studio Code and run the debugger (F5). Refer to [index.ts](https://github.com/realm/realm-object-server-graphql/blob/master/src/index.ts) for pointers on how to add it to an existing `ros init`-ed instance.
+Clone the repo and run `npm start`. To debug the app, open the folder in Visual Studio Code and run the debugger (F5).
+
+To run the service as part of a ROS instance include the following code in your service `init` file:
+
+```typescript
+import { BasicServer } from 'realm-object-server'
+import * as path from 'path'
+import { GraphQLService } from 'realm-object-server-graphql'
+
+const server = new BasicServer()
+
+server.addService(new GraphQLService())
+
+server.start({
+        // This is the location where ROS will store its runtime data
+        dataPath: path.join(__dirname, '../data'),
+    })
+    .then(() => {
+        console.log(`Realm Object Server was started on ${server.address}`)
+    })
+    .catch(err => {
+        console.error(`Error starting Realm Object Server: ${err.message}`)
+    })
+```
 
 ## Endpoints
 
