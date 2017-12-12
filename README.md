@@ -173,7 +173,7 @@ When you navigate to `http://localhost:9080/graphql/explore/:path`, you can subs
 
 You can see the schema of the Realm by querying the `__schema` node (it will also include some built-in GraphQL types):
 
-```
+```graphql
 {
   __schema {
     types {
