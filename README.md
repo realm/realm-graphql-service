@@ -11,7 +11,7 @@ To run the service as part of a ROS instance include the following code in your 
 ```typescript
 import { BasicServer } from 'realm-object-server'
 import * as path from 'path'
-import { GraphQLService } from 'realm-object-server-graphql'
+import { GraphQLService } from 'realm-graphql-service'
 
 const server = new BasicServer()
 
@@ -33,7 +33,7 @@ server.start({
 
 The GraphQL endpoint is mounted on `/graphql/:path` where `path` is the path of the Realm.
 
-The GraphiQL (visual exploratory tool) endpoint is mounted on `/graphql/explore/:path` where `path` again is the path of the Realm.
+The GraphiQL (visual exploratory tool) endpoint is mounted on `/graphql/explore/:path` where `path` again is the path of the Realm. Remember to URL encode the path.
 
 ## Authentication
 

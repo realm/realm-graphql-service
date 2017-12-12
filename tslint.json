@@ -12,7 +12,6 @@
         "graphql-tools"
       ],
       "no-implicit-dependencies": [
-        true,
         "optional"
       ],
       "quotemark": [
