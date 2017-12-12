@@ -1,79 +1,81 @@
 {
-    "name": "realm-graphql-service",
-    "version": "2.0.0",
-    "description": "GraphQL API service for the Realm Object Server",
-    "repository": "https://github.com/realm/realm-object-server-graphql",
-    "license": "SEE LICENSE IN https://realm.io/legal/developer-license-terms/",
-    "homepage": "https://realm.io",
-    "author": {
-        "name": "Realm",
-        "email": "help@realm.io",
-        "url": "https://realm.io"
-    },
-    "main": "dist/index.js",
-    "typings": "dist/index.d.ts",
-    "keywords": [
-        "Realm",
-        "Object",
-        "Server",
-        "GraphQL",
-        "Rest"
-    ],
-    "files": [
-        "dist/**/*"
-    ],
-    "scripts": {
-        "build": "rm -rf dist; ./node_modules/.bin/tsc",
-        "clean": "rm -rf dist",
-        "start": "npm run build && node dist/index.js",
-        "test": "mocha --opts ./mocha.opts",
-        "lint": "tslint --project tsconfig.json 'src/**/*.ts' 'src/**/*.tsx'",
-        "lint-fix": "tslint --project tsconfig.json --fix 'src/**/*.ts' 'src/**/*.tsx'",
-        "precommit": "lint-staged"
-    },
-    "peerDependencies": {
-        "realm-object-server": ">=2.1.0",
-        "express": ">=4.15.3"
-    },
-    "lint-staged": {
-        "*.{ts,tsx}": [
-            "tslint"
-        ]
-    },
-    "devDependencies": {
-        "@types/chai": "^4.0.4",
-        "@types/faker": "^4.1.2",
-        "@types/graphql": "^0.11.6",
-        "@types/lru-cache": "^4.1.0",
-        "@types/mocha": "^2.2.44",
-        "@types/pluralize": "0.0.28",
-        "@types/reconnectingwebsocket": "^1.0.1",
-        "@types/superagent": "^3.5.6",
-        "@types/urijs": "^1.15.34",
-        "@types/zen-observable": "^0.5.3",
-        "apollo-link": "^1.0.3",
-        "chai": "^4.1.2",
-        "del": "^3.0.0",
-        "faker": "^4.1.0",
-        "husky": "^0.14.3",
-        "lint-staged": "^5.0.0",
-        "mocha": "^4.0.1",
-        "realm-object-server": "^2.1.0",
-        "ts-node": "^3.3.0",
-        "tslint": "^5.8.0",
-        "tslint-eslint-rules": "^4.1.1",
-        "typescript": "^2.6.1"
-    },
-    "dependencies": {
-        "apollo-server-express": "^1.2.0",
-        "graphql": "^0.11.7",
-        "graphql-subscriptions": "^0.5.5",
-        "graphql-tools": "^2.10.0",
-        "lru-cache": "^4.1.1",
-        "pluralize": "^7.0.0",
-        "reconnecting-websocket": "^3.2.2",
-        "subscriptions-transport-ws": "^0.9.1",
-        "superagent": "^3.8.1",
-        "urijs": "^1.19.0"
-    }
+  "name": "realm-graphql-service",
+  "version": "2.0.0",
+  "description": "GraphQL API service for the Realm Object Server",
+  "repository": "https://github.com/realm/realm-object-server-graphql",
+  "license": "SEE LICENSE IN https://realm.io/legal/developer-license-terms/",
+  "homepage": "https://realm.io",
+  "author": {
+    "name": "Realm",
+    "email": "help@realm.io",
+    "url": "https://realm.io"
+  },
+  "main": "dist/index.js",
+  "typings": "dist/index.d.ts",
+  "keywords": [
+    "Realm",
+    "Object",
+    "Server",
+    "GraphQL",
+    "Rest"
+  ],
+  "files": [
+    "dist/**/*"
+  ],
+  "scripts": {
+    "build": "rm -rf dist; ./node_modules/.bin/tsc",
+    "clean": "rm -rf dist",
+    "start": "npm run build && node dist/index.js",
+    "test": "mocha --opts ./mocha.opts",
+    "lint": "tslint --project tsconfig.json 'src/**/*.ts' 'src/**/*.tsx'",
+    "lint-fix": "tslint --project tsconfig.json --fix 'src/**/*.ts' 'src/**/*.tsx'",
+    "precommit": "lint-staged",
+    "docs": "node_modules/typedoc/bin/typedoc src"    
+  },
+  "peerDependencies": {
+    "realm-object-server": ">=2.1.0",
+    "express": ">=4.15.3"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+        "tslint"
+    ]
+  },
+  "devDependencies": {
+    "@types/chai": "^4.0.4",
+    "@types/faker": "^4.1.2",
+    "@types/graphql": "^0.11.6",
+    "@types/lru-cache": "^4.1.0",
+    "@types/mocha": "^2.2.44",
+    "@types/pluralize": "0.0.28",
+    "@types/reconnectingwebsocket": "^1.0.1",
+    "@types/superagent": "^3.5.6",
+    "@types/urijs": "^1.15.34",
+    "@types/zen-observable": "^0.5.3",
+    "apollo-link": "^1.0.3",
+    "chai": "^4.1.2",
+    "del": "^3.0.0",
+    "faker": "^4.1.0",
+    "husky": "^0.14.3",
+    "lint-staged": "^5.0.0",
+    "mocha": "^4.0.1",
+    "realm-object-server": "^2.1.0",
+    "ts-node": "^3.3.0",
+    "tslint": "^5.8.0",
+    "tslint-eslint-rules": "^4.1.1",
+    "typedoc": "^0.9.0",
+    "typescript": "^2.6.1"
+  },
+  "dependencies": {
+    "apollo-server-express": "^1.2.0",
+    "graphql": "^0.11.7",
+    "graphql-subscriptions": "^0.5.5",
+    "graphql-tools": "^2.10.0",
+    "lru-cache": "^4.1.1",
+    "pluralize": "^7.0.0",
+    "reconnecting-websocket": "^3.2.2",
+    "subscriptions-transport-ws": "^0.9.1",
+    "superagent": "^3.8.1",
+    "urijs": "^1.19.0"
+  }
 }

@@ -7,7 +7,6 @@ import { GraphQLService } from './service';
 const server = new BasicServer();
 
 server.addService(new GraphQLService({
-  schemaCacheSettings: {},
   disableAuthentication: true
 }));
 

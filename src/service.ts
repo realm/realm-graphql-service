@@ -48,14 +48,18 @@ interface SubscriptionDetails {
   realm: Realm;
 }
 
+/**
+ * Settings to control the [[GraphQLService]] behavior.
+ */
 export interface GraphQLServiceSettings {
   /**
-   * Settings controlling the schema caching strategy. If not specified,
+   * Settings controlling the schema caching strategy. If set to `'NoCache'`,
    * Realm schemas will not be cached and instead generated on every request.
    * This is useful while developing and schemas may change frequently, but
-   * drastically reduces performance.
+   * drastically reduces performance. If not set, or set to a [[SchemaCacheSettings]]
+   * instance, schemas will be cached.
    */
-  schemaCacheSettings?: SchemaCacheSettings;
+  schemaCacheSettings?: SchemaCacheSettings | 'NoCache';
 
   /**
    * Disables authentication for graphql endpoints. This may be useful when
@@ -66,20 +70,23 @@ export interface GraphQLServiceSettings {
   disableAuthentication?: boolean;
 
   /**
-   * Disables the grahpiql explorer endpoint (/grahpql/explore).
+   * Disables the grahpiql explorer endpoint (`/grahpql/explore`).
    */
   disableExplorer?: boolean;
 
   /**
    * The number in milliseconds which a Realm will be kept open after a request
    * has completed. Higher values mean that more Realms will be kept in the cache,
-   * drastically reducing the response times of requests hitting "warm" Realms.
+   * drastically improving the response times of requests hitting "warm" Realms.
    * This, however, comes at the cost of increased memory usage. Default is
    * 120000 (2 minutes).
    */
   realmCacheMaxAge?: number;
 }
 
+/**
+ * Settings controlling the schema caching strategy.
+ */
 export interface SchemaCacheSettings {
   /**
    * The number of schemas to keep in the cache. Default is 1000.
@@ -92,6 +99,24 @@ export interface SchemaCacheSettings {
   maxAge?: number;
 }
 
+/**
+ * A service that exposes a GraphQL API for accessing the Realm files.
+ * Create a new instance and pass it to `BasicServer.addService` before
+ * calling `BasicServer.start`
+ *
+ * @example
+ * ```
+ *
+ * const service = new GraphQLService({
+ *   // Enable schema caching to improve performance
+ *   schemaCacheSettings: {}
+ * });
+ *
+ * server.addService(service);
+ *
+ * server.start();
+ * ```
+ */
 @BaseRoute('/graphql')
 export class GraphQLService {
   private server: Server;
@@ -105,13 +130,18 @@ export class GraphQLService {
   private disableAuthentication: boolean;
   private disableExplorer: boolean;
 
+  /**
+   * Creates a new `GraphQLService` instance.
+   * @param settings Settings, controlling the behavior of the service related
+   * to caching and authentication.
+   */
   constructor(settings?: GraphQLServiceSettings) {
     settings = settings || {};
 
-    if (settings.schemaCacheSettings) {
+    if (settings.schemaCacheSettings !== 'NoCache') {
       this.schemaCache = new LRU({
-        max: settings.schemaCacheSettings.max || 1000,
-        maxAge: settings.schemaCacheSettings.maxAge
+        max: (settings.schemaCacheSettings && settings.schemaCacheSettings.max) || 1000,
+        maxAge: settings.schemaCacheSettings && settings.schemaCacheSettings.maxAge
       });
     }
 
