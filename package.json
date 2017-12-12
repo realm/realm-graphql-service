@@ -1,5 +1,5 @@
 {
-    "name": "realm-graphql-server",
+    "name": "realm-graphql-service",
     "version": "2.0.0",
     "description": "GraphQL API service for the Realm Object Server",
     "repository": "https://github.com/realm/realm-object-server-graphql",
