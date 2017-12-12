@@ -151,7 +151,7 @@ To mutate an object, start with a `mutation` node. All possible mutation methods
 - Adding objects: all object types have an `addObjectType` node, e.g. `addUser`, `addAccount`, etc. It accepts a single argument that is the object to add. Related objects will be added as well, e.g. specifying `accounts` in the `addUser` input will add the account objects.
 - Updating objects: objects with primary key defined have an `updateObjectType` node, e.g. `updateUser`, `updateRealmFile`. It accepts a single argument that is the object to update. Partial updates are also allowed as long as the primary key value is specified.
 - Deleting objects:
-  - Objects with primary key defined have a `deleteObjectType` node, e.g. `deleteUder`, `deleteRealmFile`. It accepts a single argument that is the primary key of the object to delete. Returns `true` if object was deleted, `false` otherwise.
+  - Objects with primary key defined have a `deleteObjectType` node, e.g. `deleteUser`, `deleteRealmFile`. It accepts a single argument that is the primary key of the object to delete. Returns `true` if object was deleted, `false` otherwise.
   - All object types have a `deleteObjectTypes` node, e.g. `deleteUsers`, `deleteAccounts`, etc. It accepts a single optional argument - `query` that will be used to filter objects to be deleted. If not supplied, all objects of this type will be deleted.
   
 ### Subscribing
