@@ -4,9 +4,10 @@ This repo hosts a service that can be added to a Realm Object Server instance to
 
 ## Usage
 
-Clone the repo and run `npm start`. To debug the app, open the folder in Visual Studio Code and run the debugger (F5).
-
-To run the service as part of a ROS instance include the following code in your service `init` file:
+1. First install Realm Object Server with `npm install -g realm-object-server`
+2. Create a new server with `ros init my-app`
+3. Add `realm-graphql-service` as a dependency by running either `npm install realm-graphql-service -S` or if you have yarn `yarn add realm-graphql-service`
+4. Import the service and add it to your server instance like so:
 
 ```typescript
 import { BasicServer } from 'realm-object-server'
