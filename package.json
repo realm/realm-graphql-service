@@ -1,7 +1,7 @@
 {
     "name": "realm-object-server-graphql",
-    "version": "1.0.0",
-    "description": "GraphQL API service for the Realm Object Server",
+    "version": "2.0.0",
+    "description": "GraphQL API service for the Realm Object Server 2.x",
     "repository": "https://github.com/realm/realm-object-server-graphql",
     "license": "SEE LICENSE IN https://realm.io/legal/developer-license-terms/",
     "homepage": "https://realm.io",
