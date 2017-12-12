@@ -33,8 +33,7 @@
     "docs": "node_modules/typedoc/bin/typedoc src"    
   },
   "peerDependencies": {
-    "realm-object-server": ">=2.1.0",
-    "express": ">=4.15.3"
+    "realm-object-server": ">=2.1.0"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -74,8 +73,6 @@
     "lru-cache": "^4.1.1",
     "pluralize": "^7.0.0",
     "reconnecting-websocket": "^3.2.2",
-    "subscriptions-transport-ws": "^0.9.1",
-    "superagent": "^3.8.1",
-    "urijs": "^1.19.0"
+    "subscriptions-transport-ws": "^0.9.1"
   }
 }
