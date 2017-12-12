@@ -1,7 +1,7 @@
 {
-    "name": "realm-object-server-graphql",
+    "name": "realm-graphql-server",
     "version": "2.0.0",
-    "description": "GraphQL API service for the Realm Object Server 2.x",
+    "description": "GraphQL API service for the Realm Object Server",
     "repository": "https://github.com/realm/realm-object-server-graphql",
     "license": "SEE LICENSE IN https://realm.io/legal/developer-license-terms/",
     "homepage": "https://realm.io",
@@ -10,8 +10,8 @@
         "email": "help@realm.io",
         "url": "https://realm.io"
     },
-    "main": "dist/service.js",
-    "typings": "dist/service.d.ts",
+    "main": "dist/index.js",
+    "typings": "dist/index.d.ts",
     "keywords": [
         "Realm",
         "Object",
@@ -20,7 +20,7 @@
         "Rest"
     ],
     "files": [
-        "dist/service*"
+        "dist/**/*"
     ],
     "scripts": {
         "build": "rm -rf dist; ./node_modules/.bin/tsc",
@@ -33,7 +33,6 @@
     },
     "peerDependencies": {
         "realm-object-server": ">=2.1.0",
-        "realm": ">=2.0.11",
         "express": ">=4.15.3"
     },
     "lint-staged": {
