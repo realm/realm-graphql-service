@@ -470,7 +470,7 @@ export class GraphQLService {
     queryResolver[camelCasedType] = (_, args, context) => {
       this.validateRead(context);
 
-      context.realm.objectForPrimaryKey(type, args[pk.name]);
+      return context.realm.objectForPrimaryKey(type, args[pk.name]);
     };
     return `${camelCasedType}(${pk.name}: ${pk.type}): ${type}\n`;
   }
