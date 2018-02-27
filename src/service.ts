@@ -1,4 +1,5 @@
 import { ExpressHandler, graphiqlExpress, graphqlExpress } from 'apollo-server-express';
+import { detailedDiff, diff } from 'deep-object-diff';
 import * as express from 'express';
 import { buildSchema, execute, GraphQLError, GraphQLSchema, subscribe } from 'graphql';
 import { PubSub, withFilter } from 'graphql-subscriptions';
@@ -366,6 +367,7 @@ export class GraphQLService {
       if (pk) {
         query += this.setupGetObjectByPK(queryResolver, type, camelCasedType, pk);
         mutation += this.setupUpdateObject(mutationResolver, type);
+        mutation += this.setupDiffUpdateObject(mutationResolver, type);
         mutation += this.setupDeleteObject(mutationResolver, type, pk);
       }
     }
@@ -490,6 +492,38 @@ export class GraphQLService {
     };
 
     return `update${type}(input: ${type}Input): ${type}\n`;
+  }
+
+  private setupDiffUpdateObject(mutationResolver: IResolverObject, type: string): string {
+    // TODO: validate that the PK is set
+    // TODO: validate that object exists, otherwise it's addOrUpdate not just update
+    mutationResolver[`diffUpdate${type}`] = (_, args, context) => {
+      this.validateWrite(context);
+
+      const schema = context.realm.schema;
+      const objectSchema = this.objectSchemaWithName(schema, type);
+      const pkName = objectSchema.primaryKey;
+      const newObject = args.input;
+      const pkValue = newObject[pkName];
+      const oldRealmObject = context.realm.objectForPrimaryKey(type, pkValue);
+      const oldObject = JSON.parse(JSON.stringify(oldRealmObject));
+
+      let result = diff(oldObject, newObject);
+      result = JSON.parse(JSON.stringify(result)); // Not sure why this needs parsed?
+
+      // TODO: apply each change selectively
+      if (Object.keys(result).length !== 0) {
+        context.realm.write(() => {
+          result = context.realm.create(type, newObject, true);
+        });
+      } else {
+        result = oldObject;
+      }
+
+      return result;
+    };
+
+    return `diffUpdate${type}(input: ${type}Input): ${type}\n`;
   }
 
   private setupDeleteObject(mutationResolver: IResolverObject, type: string, pk: PKInfo): string {
@@ -666,5 +700,13 @@ export class GraphQLService {
 
   private camelcase(value: string): string {
     return value.charAt(0).toLowerCase() + value.slice(1);
+  }
+
+  private objectSchemaWithName(schema: any, name: string) {
+    const objectSchema = schema.find((anObjectSchema, index, array) => {
+        return anObjectSchema.name === name;
+    });
+
+    return objectSchema;
   }
 }
