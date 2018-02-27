@@ -505,7 +505,8 @@ export class GraphQLService {
       const pkName = objectSchema.primaryKey;
       const newObject = args.input;
       const pkValue = newObject[pkName];
-      const oldObject = context.realm.objectForPrimaryKey(type, pkValue);
+      const oldRealmObject = context.realm.objectForPrimaryKey(type, pkValue);
+      const oldObject = JSON.parse(JSON.stringify(oldRealmObject));
 
       let result = diff(oldObject, newObject);
 
