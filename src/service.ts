@@ -18,7 +18,6 @@ import {
     Response,
     Server,
     ServerStarted,
-    ServerStartParams,
     Stop,
     Token,
     TokenValidator,
@@ -154,8 +153,6 @@ export class GraphQLService {
   private serverStarted(server: Server) {
     this.server = server;
     this.pubsub = new PubSub();
-
-    const runningParams: ServerStartParams = (this.server as any).runningParams;
 
     this.subscriptionServer = new SubscriptionServer(
       {
@@ -298,12 +295,12 @@ export class GraphQLService {
     }
 
     if (!authToken) {
-      throw new errors.realm.AccessDenied('Authorization header is missing.');
+      throw new errors.realm.AccessDenied({ detail: 'Authorization header is missing.' });
     }
 
     const accessToken = authToken as AccessToken;
     if (accessToken.path !== path && !accessToken.isAdminToken()) {
-      throw new errors.realm.InvalidCredentials('The access token doesn\'t grant access to the requested path.');
+      throw new errors.realm.InvalidCredentials({ detail: 'The access token doesn\'t grant access to the requested path.' });
     }
   }
 
@@ -366,6 +363,7 @@ export class GraphQLService {
       if (pk) {
         query += this.setupGetObjectByPK(queryResolver, type, camelCasedType, pk);
         mutation += this.setupUpdateObject(mutationResolver, type);
+        mutation += this.setupDiffUpdateObject(mutationResolver, type);
         mutation += this.setupDeleteObject(mutationResolver, type, pk);
       }
     }
@@ -496,7 +494,16 @@ export class GraphQLService {
     mutationResolver[`diffUpdate${type}`] = (_, args, context) => {
       this.validateWrite(context);
 
-      return this.upsertObject(context, args.input, type);
+      try {
+        const response = this.upsertObject(context, args.input, type);
+        return response.result;
+      }
+      catch (err) {
+        if (context.realm.isInTransaction) {
+          context.realm.cancelTransaction();
+          throw err;
+        }
+      }
     };
 
     return `diffUpdate${type}(input: ${type}Input): ${type}\n`;
@@ -554,73 +561,77 @@ export class GraphQLService {
     result: any,
     hasChanges: boolean
   } {
-      const objectSchema = context.realm.schema.find((s) => s.name === type);
-      const pkName = objectSchema.primaryKey;
-      const pkValue = newObject[pkName];
-      let result = context.realm.objectForPrimaryKey(type, pkValue);
+    const objectSchema = context.realm.schema.find((s) => s.name === type);
+    const pkName = objectSchema.primaryKey;
+    const pkValue = newObject[pkName];
+    let result = context.realm.objectForPrimaryKey(type, pkValue);
 
-      let hasChanges = false;
-      if (shouldBeginTransaction) {
-        context.realm.beginTransaction();
-      }
+    let hasChanges = false;
+    if (shouldBeginTransaction) {
+      context.realm.beginTransaction();
+    }
 
-      if (!result) {
-        // TODO: this can be improved by not recreating linked objects
-        result = context.realm.create(type, newObject, true);
-        hasChanges = true;
-      } else {
-        for (const propertyName in objectSchema.properties) {
-          if (!objectSchema.properties.properties.hasOwnProperty(propertyName)) {
-            continue;
-          }
+    if (!result) {
+      // TODO: this can be improved by not recreating linked objects
+      result = context.realm.create(type, newObject, true);
+      hasChanges = true;
+    } else {
+      for (const propertyName in objectSchema.properties) {
+        if (!objectSchema.properties.hasOwnProperty(propertyName)) {
+          continue;
+        }
 
-          const prop = objectSchema.properties[propertyName] as Realm.ObjectSchemaProperty;
-          switch (prop.type) {
-            case 'object':
-              const link = this.upsertObject(context, newObject[propertyName], prop.objectType, false);
-              hasChanges = hasChanges || link.hasChanges;
-              if (!result[propertyName]._isSameObject(link.result)) {
-                hasChanges = true;
-                result[propertyName] = link.result;
-              }
-              break;
-            case 'date':
-              if (result[propertyName].getTime() !== newObject[propertyName].getTime()) {
-                hasChanges = true;
-                result[propertyName] = newObject[propertyName];
-              }
-              break;
-            case 'list':
-              // TODO do a better diff
+        const prop = objectSchema.properties[propertyName] as Realm.ObjectSchemaProperty;
+        switch (prop.type) {
+          case 'object':
+            const link = this.upsertObject(context, newObject[propertyName], prop.objectType, false);
+            hasChanges = hasChanges || link.hasChanges;
+            if (!result[propertyName]._isSameObject(link.result)) {
               hasChanges = true;
-              result[propertyName] = [];
-              for (const item of newObject[propertyName]) {
-                  const link = this.upsertObject(context, item, prop.objectType, false);
-                  result[propertyName].push(link.result);
-              }
-              break;
-            default:
-              if (result[propertyName] !== newObject[propertyName]) {
-                hasChanges = true;
-                result[propertyName] = newObject[propertyName];
-              }
-              break;
-          }
+              result[propertyName] = link.result;
+            }
+            break;
+          case 'date':
+            let date = newObject[propertyName];
+            if (!(date instanceof Date)) {
+              date = new Date(date);
+            }
+            if (result[propertyName].getTime() !== date.getTime()) {
+              hasChanges = true;
+              result[propertyName] = newObject[propertyName];
+            }
+            break;
+          case 'list':
+            // TODO do a better diff
+            hasChanges = true;
+            result[propertyName] = [];
+            for (const item of newObject[propertyName]) {
+                const link = this.upsertObject(context, item, prop.objectType, false);
+                result[propertyName].push(link.result);
+            }
+            break;
+          default:
+            if (result[propertyName] !== newObject[propertyName]) {
+              hasChanges = true;
+              result[propertyName] = newObject[propertyName];
+            }
+            break;
         }
       }
+    }
 
-      if (shouldBeginTransaction) {
-        if (hasChanges) {
-          context.realm.commitTransaction();
-        } else {
-          context.realm.cancelTransaction();
-        }
+    if (shouldBeginTransaction) {
+      if (hasChanges) {
+        context.realm.commitTransaction();
+      } else {
+        context.realm.cancelTransaction();
       }
+    }
 
-      return {
-          result,
-          hasChanges
-      };
+    return {
+        result,
+        hasChanges
+    };
   }
 
   private async updateSubscriptionSchema(context: any): Promise<GraphQLSchema> {

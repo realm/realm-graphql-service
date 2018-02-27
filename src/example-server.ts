@@ -13,6 +13,7 @@ server.addService(new GraphQLService({
 server
   .start({
     dataPath: path.join(__dirname, '../data'),
+    jsonBodyLimit: '10mb'
   })
   .then(() => {
     console.log(`Realm Object Server was started on ${server.address}`);
