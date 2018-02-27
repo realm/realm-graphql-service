@@ -565,6 +565,7 @@ export class GraphQLService {
       }
 
       if (!result) {
+        // TODO: this can be improved by not recreating linked objects
         result = context.realm.create(type, newObject, true);
         hasChanges = true;
       } else {
@@ -590,7 +591,14 @@ export class GraphQLService {
               }
               break;
             case 'list':
-              throw new Error('Lists are not yet supported.');
+              // TODO do a better diff
+              hasChanges = true;
+              result[propertyName] = [];
+              for (const item of newObject[propertyName]) {
+                  const link = this.upsertObject(context, item, prop.objectType, false);
+                  result[propertyName].push(link.result);
+              }
+              break;
             default:
               if (result[propertyName] !== newObject[propertyName]) {
                 hasChanges = true;
