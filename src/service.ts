@@ -509,10 +509,15 @@ export class GraphQLService {
       const oldObject = JSON.parse(JSON.stringify(oldRealmObject));
 
       let result = diff(oldObject, newObject);
+      result = JSON.parse(JSON.stringify(result)); // Not sure why this needs parsed?
 
       // TODO: apply each change selectively
       if (Object.keys(result).length !== 0) {
-        result = context.realm.create(type, newObject, true);
+        context.realm.write(() => {
+          result = context.realm.create(type, newObject, true);
+        });
+      } else {
+        result = oldObject;
       }
 
       return result;
