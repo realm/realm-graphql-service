@@ -1,6 +1,6 @@
 {
   "name": "realm-graphql-service",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "description": "GraphQL API service for the Realm Object Server",
   "repository": "https://github.com/realm/realm-object-server-graphql",
   "license": "SEE LICENSE IN https://realm.io/legal/developer-license-terms/",
@@ -33,7 +33,7 @@
     "docs": "node_modules/typedoc/bin/typedoc src"
   },
   "peerDependencies": {
-    "realm-object-server": ">=2.8.0"
+    "realm-object-server": ">=2.6.0"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -58,7 +58,7 @@
     "husky": "^0.14.3",
     "lint-staged": "^5.0.0",
     "mocha": "^4.0.1",
-    "realm-object-server": "^2.8.0",
+    "realm-object-server": "^2.6.0",
     "ts-node": "^3.3.0",
     "tslint": "^5.8.0",
     "tslint-eslint-rules": "^4.1.1",

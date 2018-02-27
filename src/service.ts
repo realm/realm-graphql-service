@@ -576,8 +576,8 @@ export class GraphQLService {
       result = context.realm.create(type, newObject, true);
       hasChanges = true;
     } else {
-      for (const propertyName in objectSchema.properties) {
-        if (!objectSchema.properties.hasOwnProperty(propertyName)) {
+      for (const propertyName of Reflect.ownKeys(objectSchema.properties)) {
+        if (newObject[propertyName] === undefined) {
           continue;
         }
 
