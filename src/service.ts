@@ -592,11 +592,7 @@ export class GraphQLService {
             }
             break;
           case 'date':
-            let date = newObject[propertyName];
-            if (!(date instanceof Date)) {
-              date = new Date(date);
-            }
-            if (result[propertyName].getTime() !== date.getTime()) {
+            if (!this.areDatesSame(result[propertyName], newObject[propertyName])) {
               hasChanges = true;
               result[propertyName] = newObject[propertyName];
             }
@@ -765,5 +761,26 @@ export class GraphQLService {
 
   private camelcase(value: string): string {
     return value.charAt(0).toLowerCase() + value.slice(1);
+  }
+
+  private areDatesSame(first: Date, second: Date): boolean {
+    try {
+      if (first === null || second === null) {
+        return first === second;
+      }
+
+      if (!(first instanceof Date)) {
+        first = new Date(first);
+      }
+
+      if (!(second instanceof Date)) {
+        second = new Date(second);
+      }
+
+      return first.getTime() === second.getTime();
+    }
+    catch (err) {
+      return false;
+    }
   }
 }
