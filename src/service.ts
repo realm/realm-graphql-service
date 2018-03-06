@@ -18,7 +18,6 @@ import {
     Response,
     Server,
     ServerStarted,
-    ServerStartParams,
     Stop,
     Token,
     TokenValidator,
@@ -155,8 +154,6 @@ export class GraphQLService {
     this.server = server;
     this.pubsub = new PubSub();
 
-    const runningParams: ServerStartParams = (this.server as any).runningParams;
-
     this.subscriptionServer = new SubscriptionServer(
       {
         schema: buildSchema('type Query{\nfoo:Int\n}'),
@@ -188,7 +185,7 @@ export class GraphQLService {
           let accessToken: Token;
           if (!this.disableAuthentication) {
             if (!authPayload || !authPayload.token) {
-              throw new errors.realm.MissingParameters('Missing \'connectionParams.token\'.');
+              throw new errors.realm.MissingParameters("Missing 'connectionParams.token'.");
             }
 
             accessToken = this.server.tokenValidator.parse(authPayload.token);
@@ -298,12 +295,12 @@ export class GraphQLService {
     }
 
     if (!authToken) {
-      throw new errors.realm.AccessDenied('Authorization header is missing.');
+      throw new errors.realm.AccessDenied({ detail: 'Authorization header is missing.' });
     }
 
     const accessToken = authToken as AccessToken;
     if (accessToken.path !== path && !accessToken.isAdminToken()) {
-      throw new errors.realm.InvalidCredentials('The access token doesn\'t grant access to the requested path.');
+      throw new errors.realm.InvalidCredentials({ detail: "The access token doesn't grant access to the requested path." });
     }
   }
 
@@ -315,7 +312,7 @@ export class GraphQLService {
     const token = context.accessToken as AccessToken;
     if (!token ||  !token.access || token.access.indexOf(access) < 0) {
       throw new errors.realm.InvalidCredentials({
-        title: `The current user doesn\'t have '${access}' access.`
+        title: `The current user doesn't have '${access}' access.`
       });
     }
   }
@@ -366,6 +363,7 @@ export class GraphQLService {
       if (pk) {
         query += this.setupGetObjectByPK(queryResolver, type, camelCasedType, pk);
         mutation += this.setupUpdateObject(mutationResolver, type);
+        mutation += this.setupDiffUpdateObject(mutationResolver, type);
         mutation += this.setupDeleteObject(mutationResolver, type, pk);
       }
     }
@@ -492,6 +490,26 @@ export class GraphQLService {
     return `update${type}(input: ${type}Input): ${type}\n`;
   }
 
+  private setupDiffUpdateObject(mutationResolver: IResolverObject, type: string): string {
+    mutationResolver[`diffUpdate${type}`] = (_, args, context) => {
+      this.validateWrite(context);
+
+      try {
+        const response = this.upsertObject(context, args.input, type);
+        return response.result;
+      }
+      catch (err) {
+        if (context.realm.isInTransaction) {
+          context.realm.cancelTransaction();
+        }
+
+        throw err;
+      }
+    };
+
+    return `diffUpdate${type}(input: ${type}Input): ${type}\n`;
+  }
+
   private setupDeleteObject(mutationResolver: IResolverObject, type: string, pk: PKInfo): string {
     mutationResolver[`delete${type}`] = (_, args, context) => {
       this.validateWrite(context);
@@ -533,6 +551,84 @@ export class GraphQLService {
     };
 
     return `delete${pluralType}(query: String): Int\n`;
+  }
+
+  private upsertObject(
+    context: { realm: Realm },
+    newObject: any,
+    type: string,
+    shouldBeginTransaction = true
+  ): {
+    result: any,
+    hasChanges: boolean
+  } {
+    const objectSchema = context.realm.schema.find((s) => s.name === type);
+    const pkName = objectSchema.primaryKey;
+    const pkValue = newObject[pkName];
+    let result = context.realm.objectForPrimaryKey(type, pkValue);
+
+    let hasChanges = false;
+    if (shouldBeginTransaction) {
+      context.realm.beginTransaction();
+    }
+
+    if (!result) {
+      // TODO: this can be improved by not recreating linked objects
+      result = context.realm.create(type, newObject, true);
+      hasChanges = true;
+    } else {
+      for (const propertyName of Reflect.ownKeys(objectSchema.properties)) {
+        if (newObject[propertyName] === undefined) {
+          continue;
+        }
+
+        const prop = objectSchema.properties[propertyName] as Realm.ObjectSchemaProperty;
+        switch (prop.type) {
+          case 'object':
+            const link = this.upsertObject(context, newObject[propertyName], prop.objectType, false);
+            hasChanges = hasChanges || link.hasChanges;
+            if (!result[propertyName]._isSameObject(link.result)) {
+              hasChanges = true;
+              result[propertyName] = link.result;
+            }
+            break;
+          case 'date':
+            if (!this.datesEqual(result[propertyName], newObject[propertyName])) {
+              hasChanges = true;
+              result[propertyName] = newObject[propertyName];
+            }
+            break;
+          case 'list':
+            // TODO do a better diff
+            hasChanges = true;
+            result[propertyName] = [];
+            for (const item of newObject[propertyName]) {
+                const link = this.upsertObject(context, item, prop.objectType, false);
+                result[propertyName].push(link.result);
+            }
+            break;
+          default:
+            if (result[propertyName] !== newObject[propertyName]) {
+              hasChanges = true;
+              result[propertyName] = newObject[propertyName];
+            }
+            break;
+        }
+      }
+    }
+
+    if (shouldBeginTransaction) {
+      if (hasChanges) {
+        context.realm.commitTransaction();
+      } else {
+        context.realm.cancelTransaction();
+      }
+    }
+
+    return {
+        result,
+        hasChanges
+    };
   }
 
   private async updateSubscriptionSchema(context: any): Promise<GraphQLSchema> {
@@ -666,5 +762,26 @@ export class GraphQLService {
 
   private camelcase(value: string): string {
     return value.charAt(0).toLowerCase() + value.slice(1);
+  }
+
+  private datesEqual(first: Date, second: Date): boolean {
+    try {
+      if (first === null || second === null) {
+        return first === second;
+      }
+
+      if (!(first instanceof Date)) {
+        first = new Date(first);
+      }
+
+      if (!(second instanceof Date)) {
+        second = new Date(second);
+      }
+
+      return first.getTime() === second.getTime();
+    }
+    catch (err) {
+      return false;
+    }
   }
 }
