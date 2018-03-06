@@ -32,9 +32,11 @@ server.start({
 
 ## Endpoints
 
-The GraphQL endpoint is mounted on `/graphql/:path` where `path` is the path of the Realm.
+- `/graphql/:path`: The GraphQL endpoint is mounted on this route. `path` is the url-encoded path of the Realm (with leading slash). E.g.: `%2Fmy-user-id%2Fmy-awesome-realm.
 
-The GraphiQL (visual exploratory tool) endpoint is mounted on `/graphql/explore/:path` where `path` again is the path of the Realm. Remember to URL encode the path.
+- `/graphql/explore/:path`: The GraphiQL (visual exploratory tool) endpoint is mounted on this route. `path` again is the url-encoded path of the Realm.
+
+- `DELETE /graphql/schema/:path`: An endpoint to delete the cached schema of the Realm at `path`. This is useful if schema caching is enabled and you'd like to invalidate the entry for a particular path (e.g. due to a recent schema change).
 
 ## Authentication
 
@@ -127,7 +129,7 @@ const wsLink = new WebSocketLink({
 
 Check the [Apollo docs](https://github.com/apollographql/apollo-client/blob/master/docs/source/features/subscriptions.md#authentication-over-websocket) for more info.
 
-**IMPORTANT NOTE ON TOKEN VALIDATION**: The access token for subscriptions is validated only when the socket connection is established and not when emitting notifications by the server. This means that it's the client's responsibility to terminate the connection if the user logs out or loses access to the Realm. 
+**IMPORTANT NOTE ON TOKEN VALIDATION**: The access token for subscriptions is validated only when the socket connection is established and not when emitting notifications by the server. This means that it's the client's responsibility to terminate the connection if the user logs out or loses access to the Realm.
 
 ## Exploring
 
@@ -154,7 +156,7 @@ To mutate an object, start with a `mutation` node. All possible mutation methods
 - Deleting objects:
   - Objects with primary key defined have a `deleteObjectType` node, e.g. `deleteUser`, `deleteRealmFile`. It accepts a single argument that is the primary key of the object to delete. Returns `true` if object was deleted, `false` otherwise.
   - All object types have a `deleteObjectTypes` node, e.g. `deleteUsers`, `deleteAccounts`, etc. It accepts a single optional argument - `query` that will be used to filter objects to be deleted. If not supplied, all objects of this type will be deleted.
-  
+
 ### Subscribing
 
 To subscribe for change notifications, start with a `subscription` node. The subscription endpoint is `ws://ROS-URL:ROS-PORT/graphql/:path`.
@@ -165,7 +167,7 @@ To subscribe for change notifications, start with a `subscription` node. The sub
   - `descending`: sorting direction (default is false).
   - `skip`: offset to start taking objects from.
   - `take`: maximum number of items to return.
-  
+
 #### Using GraphiQL with subscriptions
 
 When you navigate to `http://localhost:9080/graphql/explore/:path`, you can subscribe by creating a `subscription` node. Whenever the Realm changes, an update will be pushed, containing the matching dataset. Additionally, immediately upon subscribing, the initial dataset will be sent.

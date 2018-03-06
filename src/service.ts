@@ -21,7 +21,9 @@ import {
     Stop,
     Token,
     TokenValidator,
-    Upgrade
+    Upgrade,
+    Delete,
+    isAdminToken
 } from 'realm-object-server';
 import { SubscriptionServer } from 'subscriptions-transport-ws';
 import { setTimeout } from 'timers';
@@ -290,7 +292,20 @@ export class GraphQLService {
     this.handler(req, res, null);
   }
 
-  private authenticate(authToken: any, path: string) {
+  @Delete('/schema/:path')
+  private deleteSchema(@Request() req: express.Request, @Response() res: express.Response) {
+    this.authenticate((req as any).authToken);
+    this.schemaCache.del(req.params.path);
+    res.status(204).send({});
+  }
+
+  /**
+   * Ensures the user is authenticated.
+   * @param authToken token as set by the authentication middleware
+   * @param path the optional path to look for in the access token.
+   * If not provided, only admin tokens are accepted.
+   */
+  private authenticate(authToken: any, path?: string) {
     if (this.disableAuthentication) {
       return;
     }
@@ -299,8 +314,7 @@ export class GraphQLService {
       throw new errors.realm.AccessDenied({ detail: 'Authorization header is missing.' });
     }
 
-    const accessToken = authToken as AccessToken;
-    if (accessToken.path !== path && !accessToken.isAdminToken()) {
+    if (!isAdminToken(authToken) && (!path || authToken.path !== path)) {
       throw new errors.realm.InvalidCredentials({ detail: "The access token doesn't grant access to the requested path." });
     }
   }
