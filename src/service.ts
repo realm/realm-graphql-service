@@ -77,7 +77,8 @@ export interface GraphQLServiceSettings {
    * The number in milliseconds which a Realm will be kept open after a request
    * has completed. Higher values mean that more Realms will be kept in the cache,
    * drastically improving the response times of requests hitting "warm" Realms.
-   * This, however, comes at the cost of increased memory usage. Default is
+   * This, however, comes at the cost of increased memory usage. If a negative value
+   * is provided, the realms will never be evicted from the cache. Default is
    * 120000 (2 minutes).
    */
   realmCacheMaxAge?: number;
@@ -169,7 +170,7 @@ export class GraphQLService {
           const details = this.querysubscriptions[opid];
           if (details) {
             details.results.removeAllListeners();
-            setTimeout(() => details.realm.close(), this.realmCacheTTL);
+            this.closeRealm(details.realm);
             delete this.querysubscriptions[opid];
           }
         },
@@ -208,7 +209,7 @@ export class GraphQLService {
       const schema = this.getSchema(path, realm);
 
       res.once('finish', () => {
-        setTimeout(() => realm.close(), this.realmCacheTTL);
+        this.closeRealm(realm);
       });
 
       return {
@@ -314,6 +315,12 @@ export class GraphQLService {
       throw new errors.realm.InvalidCredentials({
         title: `The current user doesn't have '${access}' access.`
       });
+    }
+  }
+
+  private closeRealm(realm: Realm) {
+    if (this.realmCacheTTL >= 0) {
+      setTimeout(() => realm.close(), this.realmCacheTTL);
     }
   }
 
