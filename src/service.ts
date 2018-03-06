@@ -185,7 +185,7 @@ export class GraphQLService {
           let accessToken: Token;
           if (!this.disableAuthentication) {
             if (!authPayload || !authPayload.token) {
-              throw new errors.realm.MissingParameters('Missing \'connectionParams.token\'.');
+              throw new errors.realm.MissingParameters("Missing 'connectionParams.token'.");
             }
 
             accessToken = this.server.tokenValidator.parse(authPayload.token);
@@ -300,7 +300,7 @@ export class GraphQLService {
 
     const accessToken = authToken as AccessToken;
     if (accessToken.path !== path && !accessToken.isAdminToken()) {
-      throw new errors.realm.InvalidCredentials({ detail: 'The access token doesn\'t grant access to the requested path.' });
+      throw new errors.realm.InvalidCredentials({ detail: "The access token doesn't grant access to the requested path." });
     }
   }
 
@@ -312,7 +312,7 @@ export class GraphQLService {
     const token = context.accessToken as AccessToken;
     if (!token ||  !token.access || token.access.indexOf(access) < 0) {
       throw new errors.realm.InvalidCredentials({
-        title: `The current user doesn\'t have '${access}' access.`
+        title: `The current user doesn't have '${access}' access.`
       });
     }
   }
@@ -501,8 +501,9 @@ export class GraphQLService {
       catch (err) {
         if (context.realm.isInTransaction) {
           context.realm.cancelTransaction();
-          throw err;
         }
+
+        throw err;
       }
     };
 
@@ -592,7 +593,7 @@ export class GraphQLService {
             }
             break;
           case 'date':
-            if (!this.areDatesSame(result[propertyName], newObject[propertyName])) {
+            if (!this.datesEqual(result[propertyName], newObject[propertyName])) {
               hasChanges = true;
               result[propertyName] = newObject[propertyName];
             }
@@ -763,7 +764,7 @@ export class GraphQLService {
     return value.charAt(0).toLowerCase() + value.slice(1);
   }
 
-  private areDatesSame(first: Date, second: Date): boolean {
+  private datesEqual(first: Date, second: Date): boolean {
     try {
       if (first === null || second === null) {
         return first === second;
