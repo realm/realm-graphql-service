@@ -1,6 +1,6 @@
 import { ExpressHandler, graphiqlExpress, graphqlExpress } from 'apollo-server-express';
 import * as express from 'express';
-import { buildSchema, execute, GraphQLError, GraphQLSchema, subscribe } from 'graphql';
+import { buildSchema, execute, GraphQLError, GraphQLScalarType, GraphQLSchema, subscribe } from 'graphql';
 import { PubSub, withFilter } from 'graphql-subscriptions';
 import { makeExecutableSchema } from 'graphql-tools';
 import { IResolverObject } from 'graphql-tools/dist/Interfaces';
@@ -100,6 +100,24 @@ export interface SchemaCacheSettings {
    */
   maxAge?: number;
 }
+
+const Base64Type = new GraphQLScalarType({
+  name: 'Base64',
+  description: 'A base64-encoded binary blob',
+  serialize(value) {
+    return Buffer.from(value).toString('base64');
+  },
+  parseValue(value) {
+    return Buffer.from(value, 'base64');
+  },
+  parseLiteral(ast) {
+    if (ast.kind === 'StringValue') {
+      return Buffer.from(ast.value, 'base64');
+    }
+
+    throw new TypeError(`Expected StringValue literal, but got ${ast.kind}`);
+  }
+});
 
 /**
  * A service that exposes a GraphQL API for accessing the Realm files.
@@ -351,7 +369,10 @@ export class GraphQLService {
       return this.schemaCache.get(path);
     }
 
-    let schema = '';
+    let schema = `
+    scalar ${Base64Type.name}
+    `;
+
     const types = new Array<[string, PKInfo]>();
     const queryResolver: IResolverObject = {};
     const mutationResolver: IResolverObject = {};
@@ -402,7 +423,8 @@ export class GraphQLService {
       resolvers: {
         Query: queryResolver,
         Mutation: mutationResolver,
-        Subscription: subscriptionResolver
+        Subscription: subscriptionResolver,
+        [Base64Type.name]: Base64Type
       },
     });
 
@@ -754,8 +776,10 @@ export class GraphQLService {
         break;
       case 'date':
       case 'string':
-      case 'data':
         result = 'String';
+        break;
+      case 'data':
+        result = Base64Type.name;
         break;
       default:
         return prop;
