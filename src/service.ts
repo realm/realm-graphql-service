@@ -338,12 +338,12 @@ export class GraphQLService {
   }
 
   private validateAccess(context: any, access: string) {
-    if (this.disableAuthentication) {
+    if (this.disableAuthentication || isAdminToken(context.accessToken)) {
       return;
     }
 
     const token = context.accessToken as AccessToken;
-    if (!token ||  !token.access || token.access.indexOf(access) < 0) {
+    if (!token || !token.access || token.access.indexOf(access) < 0) {
       throw new errors.realm.InvalidCredentials({
         title: `The current user doesn't have '${access}' access.`
       });

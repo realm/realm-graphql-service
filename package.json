@@ -29,7 +29,6 @@
     "test": "mocha --opts ./mocha.opts",
     "lint": "tslint --project tsconfig.json 'src/**/*.ts' 'src/**/*.tsx'",
     "lint-fix": "tslint --project tsconfig.json --fix 'src/**/*.ts' 'src/**/*.tsx'",
-    "precommit": "lint-staged",
     "docs": "node_modules/typedoc/bin/typedoc src"
   },
   "peerDependencies": {
