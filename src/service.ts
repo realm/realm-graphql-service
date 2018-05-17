@@ -27,6 +27,7 @@ import {
 } from 'realm-object-server';
 import { SubscriptionServer } from 'subscriptions-transport-ws';
 import { setTimeout } from 'timers';
+import { v4 } from 'uuid';
 
 interface SchemaTypes {
   type: string;
@@ -175,6 +176,11 @@ export class GraphQLService {
     this.server = server;
     this.pubsub = new PubSub();
 
+    const getOperationId = (socket: any, messageId: string) => {
+      // socket.id is set to a random value in `onOperation`
+      return `${socket.id}_${messageId}`;
+    };
+
     this.subscriptionServer = new SubscriptionServer(
       {
         schema: buildSchema('type Query{\nfoo:Int\n}'),
@@ -186,7 +192,8 @@ export class GraphQLService {
           const schema = await this.updateSubscriptionSchema(context);
           return subscribe(schema, document, root, context, variables, operationName);
         },
-        onOperationComplete: (socket, opid) => {
+        onOperationComplete: (socket, messageId) => {
+          const opid = getOperationId(socket, messageId);
           const details = this.querysubscriptions[opid];
           if (details) {
             details.results.removeAllListeners();
@@ -195,7 +202,8 @@ export class GraphQLService {
           }
         },
         onOperation: (message, params, socket) => {
-          params.context.operationId = message.id;
+          socket.id = v4();
+          params.context.operationId = getOperationId(socket, message.id);
 
           // HACK: socket.realmPath is set in subscriptionHandler to the
           // :path route parameter
