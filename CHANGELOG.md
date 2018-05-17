@@ -3,9 +3,13 @@
 ### Enhancements
 
 ### Bug fixes
-* Fixed a bug that caused subscriptions to trigger for unrelated changes.
 
 ### Breaking Changes
+
+# 2.3.2
+
+### Bug fixes
+* Fixed a bug that caused subscriptions to trigger for unrelated changes.
 
 # 2.3.1
 
