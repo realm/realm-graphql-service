@@ -3,6 +3,7 @@
 ### Enhancements
 
 ### Bug fixes
+* Fixed a bug that caused subscriptions to trigger for unrelated changes.
 
 ### Breaking Changes
 

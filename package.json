@@ -49,6 +49,7 @@
     "@types/reconnectingwebsocket": "^1.0.1",
     "@types/superagent": "^3.5.6",
     "@types/urijs": "^1.15.34",
+    "@types/uuid": "^3.4.3",
     "@types/zen-observable": "^0.5.3",
     "apollo-link": "^1.0.3",
     "chai": "^4.1.2",
@@ -57,7 +58,7 @@
     "husky": "^0.14.3",
     "lint-staged": "^5.0.0",
     "mocha": "^4.0.1",
-    "realm-object-server": "^2.6.0",
+    "realm-object-server": "^3.4.2",
     "ts-node": "^3.3.0",
     "tslint": "^5.8.0",
     "tslint-eslint-rules": "^4.1.1",
@@ -72,6 +73,7 @@
     "lru-cache": "^4.1.1",
     "pluralize": "^7.0.0",
     "reconnecting-websocket": "^3.2.2",
-    "subscriptions-transport-ws": "^0.9.1"
+    "subscriptions-transport-ws": "^0.9.1",
+    "uuid": "^3.2.1"
   }
 }
