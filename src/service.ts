@@ -362,10 +362,7 @@ export class GraphQLService {
 
   private closeRealm(realm: Realm) {
     if (this.realmCacheTTL >= 0) {
-      setTimeout(() => {
-        realm.removeAllListeners();
-        realm.close();
-      }, this.realmCacheTTL);
+      setTimeout(() => realm.close(), this.realmCacheTTL);
     }
   }
 
