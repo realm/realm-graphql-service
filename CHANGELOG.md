@@ -1,8 +1,11 @@
 # NEXT RELEASE
 
 ### Enhancements
+* Schema cache will be preemptively invalidated if the Realm is open while the schema change takes place. You still need
+to manually invalidate it if you change the schema of a Realm that is not open by the GraphQL service.
 
 ### Bug fixes
+* The Realm schema will be properly updated after cache invalidation.
 
 ### Breaking Changes
 
