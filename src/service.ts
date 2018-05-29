@@ -140,16 +140,18 @@ const Base64Type = new GraphQLScalarType({
  */
 @BaseRoute('/graphql')
 export class GraphQLService {
+  private readonly schemaCache: LRU.Cache<string, GraphQLSchema>;
+  private readonly disableAuthentication: boolean;
+  private readonly realmCacheTTL: number;
+  private readonly disableExplorer: boolean;
+  private readonly schemaHandlers: { [path: string]: (realm: Realm, event: string, schema: Realm.ObjectSchema[]) => void } = {};
+
   private server: Server;
   private subscriptionServer: SubscriptionServer;
   private handler: ExpressHandler;
   private graphiql: ExpressHandler;
   private pubsub: PubSub;
   private querysubscriptions: { [id: string]: SubscriptionDetails } = {};
-  private schemaCache: LRU.Cache<string, GraphQLSchema>;
-  private realmCacheTTL: number;
-  private disableAuthentication: boolean;
-  private disableExplorer: boolean;
 
   /**
    * Creates a new `GraphQLService` instance.
@@ -233,7 +235,7 @@ export class GraphQLService {
 
     this.handler = graphqlExpress(async (req, res) => {
       const path = req.params.path;
-      const realm = await this.server.openRealm(path);
+      const realm = await this.openRealm(path);
       const schema = this.getSchema(path, realm);
 
       res.once('finish', () => {
@@ -360,7 +362,10 @@ export class GraphQLService {
 
   private closeRealm(realm: Realm) {
     if (this.realmCacheTTL >= 0) {
-      setTimeout(() => realm.close(), this.realmCacheTTL);
+      setTimeout(() => {
+        realm.removeAllListeners();
+        realm.close();
+      }, this.realmCacheTTL);
     }
   }
 
@@ -687,7 +692,7 @@ export class GraphQLService {
     if (!path) {
       throw new GraphQLError('Missing "realmPath" from context. It is required for subscriptions.');
     }
-    const realm = await this.server.openRealm(path);
+    const realm = await this.openRealm(path);
     const schema = this.getSchema(path, realm);
 
     context.realm = realm;
@@ -836,5 +841,28 @@ export class GraphQLService {
     catch (err) {
       return false;
     }
+  }
+
+  private async openRealm(path: string): Promise<Realm> {
+    const realm = await this.server.openRealm(path);
+
+    if (this.schemaCache) {
+      realm.addListener("schema", this.getSchemaHandler(path));
+    }
+
+    return realm;
+  }
+
+  private getSchemaHandler(path: string): (realm: Realm, event: string, schema: Realm.ObjectSchema[]) => void {
+    let value = this.schemaHandlers[path];
+    if (!value) {
+      value = (realm: Realm, event: string, schema: Realm.ObjectSchema[]) => {
+        this.schemaCache.del(path);
+        this.getSchema(path, realm);
+      }
+      this.schemaHandlers[path] = value;
+    }
+
+    return value;
   }
 }
