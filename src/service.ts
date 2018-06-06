@@ -630,8 +630,8 @@ export class GraphQLService {
       result = context.realm.create(type, newObject, true);
       hasChanges = true;
     } else {
-      for (const propertyName of Reflect.ownKeys(objectSchema.properties)) {
-        if (newObject[propertyName] === undefined) {
+      for (const propertyName of Object.getOwnPropertyNames(objectSchema.properties)) {
+        if (newObject[propertyName] === undefined || propertyName === pkName) {
           continue;
         }
 

@@ -6,6 +6,11 @@
 
 ### Breaking Changes
 
+# 2.5.0
+
+### Enahancements
+* Updated dependencies to their latest versions to avoid the issue with the `@types/graphql` package missing.
+
 # 2.4.0
 
 ### Enhancements
