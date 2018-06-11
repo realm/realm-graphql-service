@@ -6,6 +6,12 @@
 
 ### Breaking Changes
 
+# 2.5.1
+
+### Bug fixes
+* Fixed an issue that caused querying realms with types/properties that started with double underscores to throw
+an obscure type error.
+
 # 2.5.0
 
 ### Enahancements

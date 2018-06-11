@@ -23,7 +23,8 @@ import {
     TokenValidator,
     Upgrade,
     Delete,
-    isAdminToken
+    isAdminToken,
+    Next
 } from 'realm-object-server';
 import { SubscriptionServer } from 'subscriptions-transport-ws';
 import { setTimeout } from 'timers';
@@ -289,35 +290,35 @@ export class GraphQLService {
   }
 
   @Get('/explore/:path')
-  private getExplore(@Request() req: express.Request, @Response() res: express.Response) {
+  private getExplore(@Request() req: express.Request, @Response() res: express.Response, @Next() next) {
     if (this.disableExplorer) {
       throw new errors.realm.AccessDenied();
     }
 
     this.authenticate((req as any).authToken, req.params.path);
-    this.graphiql(req, res, null);
+    this.graphiql(req, res, next);
   }
 
   @Post('/explore/:path')
-  private postExplore(@Request() req: express.Request, @Response() res: express.Response) {
+  private postExplore(@Request() req: express.Request, @Response() res: express.Response, @Next() next) {
     if (this.disableExplorer) {
       throw new errors.realm.AccessDenied();
     }
 
     this.authenticate((req as any).authToken, req.params.path);
-    this.graphiql(req, res, null);
+    this.graphiql(req, res, next);
   }
 
   @Get('/:path')
-  private get(@Request() req: express.Request, @Response() res: express.Response) {
+  private get(@Request() req: express.Request, @Response() res: express.Response, @Next() next) {
     this.authenticate((req as any).authToken, req.params.path);
-    this.handler(req, res, null);
+    this.handler(req, res, next);
   }
 
   @Post('/:path')
-  private post(@Request() req: express.Request, @Response() res: express.Response) {
+  private post(@Request() req: express.Request, @Response() res: express.Response, @Next() next) {
     this.authenticate((req as any).authToken, req.params.path);
-    this.handler(req, res, null);
+    this.handler(req, res, next);
   }
 
   @Delete('/schema/:path')
@@ -389,6 +390,10 @@ export class GraphQLService {
     const subscriptionResolver: IResolverObject = {};
 
     for (const obj of realm.schema) {
+      if (this.isReserved(obj.name)) {
+        continue;
+      }
+
       const propertyInfo = this.getPropertySchema(obj);
 
       types.push([obj.name, propertyInfo.pk]);
@@ -703,7 +708,8 @@ export class GraphQLService {
     let primaryKey: PKInfo = null;
 
     for (const key in obj.properties) {
-      if (!obj.properties.hasOwnProperty(key)) {
+      if (!obj.properties.hasOwnProperty(key) ||
+          this.isReserved(key)) {
         continue;
       }
 
@@ -713,6 +719,9 @@ export class GraphQLService {
       }
 
       const types = this.getTypeString(prop);
+      if (!types || this.isReserved(types.type)) {
+        continue;
+      }
 
       schemaProperties += `${key}: ${types.type}\n`;
       inputSchemaProperties += `${key}: ${types.inputType}\n`;
@@ -742,6 +751,9 @@ export class GraphQLService {
         break;
       case 'list':
         const innerType = this.getPrimitiveTypeString(prop.objectType, prop.optional);
+        if (this.isReserved(innerType)) {
+          return undefined;
+        }
         type = `[${innerType}]`;
 
         switch (prop.objectType) {
@@ -767,7 +779,7 @@ export class GraphQLService {
 
     return {
       type,
-      inputType
+      inputType,
     };
   }
 
@@ -817,6 +829,10 @@ export class GraphQLService {
 
   private camelcase(value: string): string {
     return value.charAt(0).toLowerCase() + value.slice(1);
+  }
+
+  private isReserved(value: string): boolean {
+    return value.startsWith("__");
   }
 
   private datesEqual(first: Date, second: Date): boolean {
