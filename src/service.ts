@@ -30,6 +30,7 @@ import {
 import { SubscriptionServer } from 'subscriptions-transport-ws';
 import { setTimeout } from 'timers';
 import { v4 } from 'uuid';
+import { GraphiQLData } from 'apollo-server-module-graphiql';
 
 interface SchemaTypes {
   type: string;
@@ -87,6 +88,14 @@ export interface GraphQLServiceSettings {
    * 120000 (2 minutes).
    */
   realmCacheMaxAge?: number;
+
+  /**
+   * Controls whether the explorer websocket connections will be made over SSL or
+   * not. If not set, the service will try to infer the correct value from the
+   * request protocol, but in some cases, a load balancer may terminate https traffic,
+   * leading to incorrect websocket protocol being used.
+   */
+  forceExplorerSSL?: boolean;
 }
 
 /**
@@ -148,6 +157,7 @@ export class GraphQLService {
   private readonly realmCacheTTL: number;
   private readonly disableExplorer: boolean;
   private readonly schemaHandlers: { [path: string]: (realm: Realm, event: string, schema: Realm.ObjectSchema[]) => void } = {};
+  private readonly forceExplorerSSL: boolean | undefined;
 
   private server: Server;
   private subscriptionServer: SubscriptionServer;
@@ -174,6 +184,7 @@ export class GraphQLService {
     this.disableAuthentication = settings.disableAuthentication || false;
     this.disableExplorer = settings.disableExplorer || false;
     this.realmCacheTTL = settings.realmCacheMaxAge || 120000;
+    this.forceExplorerSSL = settings.forceExplorerSSL;
   }
 
   @ServerStarted()
@@ -257,9 +268,20 @@ export class GraphQLService {
     this.graphiql = graphiqlExpress((req) => {
       const path = req.params.path;
 
-      const protocol = req.protocol === 'https' ? 'wss' : 'ws';
+      let protocol: string;
+      switch (this.forceExplorerSSL) {
+        case true:
+          protocol = "wss";
+          break;
+        case false:
+          protocol = "ws";
+          break;
+        default:
+          protocol = req.protocol === 'https' ? 'wss' : 'ws';
+          break;
+      }
 
-      const result: any = {
+      const result: GraphiQLData = {
         endpointURL: `/graphql/${encodeURIComponent(path)}`,
         subscriptionsEndpoint: `${protocol}://${req.get('host')}/graphql/${encodeURIComponent(path)}`
       };

@@ -6,6 +6,11 @@
 
 ### Breaking Changes
 
+# 2.6.0
+
+### Enhancements
+* Expose option to force the explorer to use SSL for websockets.
+
 # 2.5.2
 
 ### Bug fixes
