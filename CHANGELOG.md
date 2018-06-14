@@ -6,6 +6,11 @@
 
 ### Breaking Changes
 
+# 2.5.2
+
+### Bug fixes
+* Applied the CORS middleware to the GraphQL service.
+
 # 2.5.1
 
 ### Bug fixes
