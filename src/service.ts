@@ -24,7 +24,8 @@ import {
     Upgrade,
     Delete,
     isAdminToken,
-    Next
+    Next,
+    Cors
 } from 'realm-object-server';
 import { SubscriptionServer } from 'subscriptions-transport-ws';
 import { setTimeout } from 'timers';
@@ -140,6 +141,7 @@ const Base64Type = new GraphQLScalarType({
  * ```
  */
 @BaseRoute('/graphql')
+@Cors('/')
 export class GraphQLService {
   private readonly schemaCache: LRU.Cache<string, GraphQLSchema>;
   private readonly disableAuthentication: boolean;
