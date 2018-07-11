@@ -1,7 +1,7 @@
 import { ExpressHandler, graphiqlExpress, graphqlExpress } from 'apollo-server-express';
 import * as express from 'express';
 import { buildSchema, execute, GraphQLError, GraphQLScalarType, GraphQLSchema, subscribe } from 'graphql';
-import { PubSub, withFilter } from 'graphql-subscriptions';
+import { PubSub } from 'graphql-subscriptions';
 import { makeExecutableSchema } from 'graphql-tools';
 import { IResolverObject } from 'graphql-tools/dist/Interfaces';
 import * as LRU from 'lru-cache';
@@ -13,14 +13,12 @@ import {
     errors,
     Get,
     Post,
-    Promisify,
     Request,
     Response,
     Server,
     ServerStarted,
     Stop,
     Token,
-    TokenValidator,
     Upgrade,
     Delete,
     isAdminToken,
@@ -433,7 +431,7 @@ export class GraphQLService {
     for (const [type, pk] of types) {
       // TODO: this assumes types are PascalCase
       const camelCasedType = this.camelcase(type);
-      const pluralType = pluralize(camelCasedType);
+      const pluralType = this.pluralize(camelCasedType);
 
       query += this.setupGetAllObjects(queryResolver, type, pluralType);
       mutation += this.setupAddObject(mutationResolver, type);
@@ -612,7 +610,7 @@ export class GraphQLService {
   }
 
   private setupDeleteObjects(mutationResolver: IResolverObject, type: string): string {
-    const pluralType = pluralize(type);
+    const pluralType = this.pluralize(type);
 
     mutationResolver[`delete${pluralType}`] = (_, args, context) => {
       this.validateWrite(context);
@@ -853,6 +851,15 @@ export class GraphQLService {
 
   private camelcase(value: string): string {
     return value.charAt(0).toLowerCase() + value.slice(1);
+  }
+
+  private pluralize(value: string): string {
+    const result = pluralize(value);
+    if (result !== value) {
+      return result;
+    }
+
+    return result + "s";
   }
 
   private isReserved(value: string): boolean {

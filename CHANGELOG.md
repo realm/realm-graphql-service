@@ -6,6 +6,36 @@
 
 ### Breaking Changes
 
+# 3.0.0
+
+### Breaking Changes
+* Types that are plural nouns will now have forced `s` appended to the actions that would otherwise have been plural to distinguish from the singular action. For example having a type `Data` would have previously generated actions:
+  ```
+  Query {
+    data(query, sortBy, descending, skip, take): [Data!]
+  }
+
+  Mutation {
+    deleteData(query): Int
+  }
+  ```
+
+  which would have produced conflicting actions when the type also had a primary key. Now we'll generate actions with grammatically incorrect name - `datas` - which will, however, be distinct from any actions that were acting on the singular value:
+
+  ```
+  Query {
+    datas(query, sortBy, descending, skip, take): [Data!]
+    // If we have a PK
+    data(pk): Data
+  }
+
+  Mutation {
+    deleteDatas(query): Int
+    // If we have a PK
+    deleteData(pk): Boolean
+  }
+  ```
+
 # 2.6.0
 
 ### Enhancements
