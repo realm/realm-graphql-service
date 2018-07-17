@@ -197,15 +197,20 @@ export class GraphQLService {
 
     this.subscriptionServer = new SubscriptionServer(
       {
-        schema: buildSchema('type Query{\nfoo:Int\n}'),
-        execute: async (_, document, root, context, variables, operationName) => {
-          const schema = await this.updateSubscriptionSchema(context);
-          return execute(schema, document, root, context, variables, operationName);
+        schema: async (context) => {
+          const path = context.realmPath;
+          if (!path) {
+            throw new GraphQLError('Missing "realmPath" from context. It is required for subscriptions.');
+          }
+          const realm = await this.openRealm(path);
+          const schema = this.getSchema(path, realm);
+
+          context.realm = realm;
+
+          return schema;
         },
-        subscribe: async (_, document, root, context, variables, operationName) => {
-          const schema = await this.updateSubscriptionSchema(context);
-          return subscribe(schema, document, root, context, variables, operationName);
-        },
+        execute,
+        subscribe,
         onOperationComplete: (socket, messageId) => {
           const opid = getOperationId(socket, messageId);
           const details = this.querysubscriptions[opid];
@@ -709,19 +714,6 @@ export class GraphQLService {
         result,
         hasChanges
     };
-  }
-
-  private async updateSubscriptionSchema(context: any): Promise<GraphQLSchema> {
-    const path = context.realmPath;
-    if (!path) {
-      throw new GraphQLError('Missing "realmPath" from context. It is required for subscriptions.');
-    }
-    const realm = await this.openRealm(path);
-    const schema = this.getSchema(path, realm);
-
-    context.realm = realm;
-
-    return schema;
   }
 
   private getPropertySchema(obj: ObjectSchema): PropertySchemaInfo {
