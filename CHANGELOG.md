@@ -6,6 +6,11 @@
 
 ### Breaking Changes
 
+# 3.1.1
+
+### Enhancements
+* Queries and mutations over websocket are now supported.
+
 # 3.0.0
 
 ### Breaking Changes

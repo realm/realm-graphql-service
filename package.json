@@ -73,7 +73,7 @@
     "lru-cache": "^4.1.3",
     "pluralize": "^7.0.0",
     "reconnecting-websocket": "^3.2.2",
-    "subscriptions-transport-ws": "file:subscriptions-transport-ws-0.9.12.tgz",
+    "subscriptions-transport-ws": "0.9.14",
     "uuid": "^3.2.1"
   }
 }
