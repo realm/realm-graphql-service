@@ -1,6 +1,6 @@
 import { ExpressHandler, graphiqlExpress, graphqlExpress } from 'apollo-server-express';
 import * as express from 'express';
-import { buildSchema, execute, GraphQLError, GraphQLScalarType, GraphQLSchema, subscribe } from 'graphql';
+import { execute, GraphQLError, GraphQLScalarType, GraphQLSchema, subscribe } from 'graphql';
 import { PubSub } from 'graphql-subscriptions';
 import { makeExecutableSchema } from 'graphql-tools';
 import { IResolverObject } from 'graphql-tools/dist/Interfaces';
@@ -23,7 +23,8 @@ import {
     Delete,
     isAdminToken,
     Next,
-    Cors
+    Cors,
+    RosRequest,
 } from 'realm-object-server';
 import { SubscriptionServer } from 'subscriptions-transport-ws';
 import { setTimeout } from 'timers';
@@ -162,7 +163,7 @@ export class GraphQLService {
   private handler: ExpressHandler;
   private graphiql: ExpressHandler;
   private pubsub: PubSub;
-  private querysubscriptions: { [id: string]: SubscriptionDetails } = {};
+  private querySubscriptions: { [id: string]: SubscriptionDetails } = {};
 
   /**
    * Creates a new `GraphQLService` instance.
@@ -197,31 +198,28 @@ export class GraphQLService {
 
     this.subscriptionServer = new SubscriptionServer(
       {
-        schema: buildSchema('type Query{\nfoo:Int\n}'),
-        execute: async (_, document, root, context, variables, operationName) => {
-          const schema = await this.updateSubscriptionSchema(context);
-          return execute(schema, document, root, context, variables, operationName);
-        },
-        subscribe: async (_, document, root, context, variables, operationName) => {
-          const schema = await this.updateSubscriptionSchema(context);
-          return subscribe(schema, document, root, context, variables, operationName);
-        },
+        execute,
+        subscribe,
         onOperationComplete: (socket, messageId) => {
           const opid = getOperationId(socket, messageId);
-          const details = this.querysubscriptions[opid];
+          const details = this.querySubscriptions[opid];
           if (details) {
             details.results.removeAllListeners();
             this.closeRealm(details.realm);
-            delete this.querysubscriptions[opid];
+            delete this.querySubscriptions[opid];
           }
         },
-        onOperation: (message, params, socket) => {
-          socket.id = v4();
-          params.context.operationId = getOperationId(socket, message.id);
-
+        onOperation: async (message, params, socket) => {
           // HACK: socket.realmPath is set in subscriptionHandler to the
           // :path route parameter
-          params.context.realmPath = socket.realmPath;
+          if (!socket.realmPath) {
+            throw new GraphQLError('Missing "realmPath" from context. It is required for subscriptions.');
+          }
+
+          socket.id = v4();
+          params.context.operationId = getOperationId(socket, message.id);
+          params.context.realm = await this.openRealm(socket.realmPath);
+          params.schema = this.getSchema(socket.realmPath, params.context.realm);
           return params;
         },
         onConnect: async (authPayload, socket) => {
@@ -312,40 +310,40 @@ export class GraphQLService {
   }
 
   @Get('/explore/:path')
-  private getExplore(@Request() req: express.Request, @Response() res: express.Response, @Next() next) {
+  private getExplore(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
     if (this.disableExplorer) {
       throw new errors.realm.AccessDenied();
     }
 
-    this.authenticate((req as any).authToken, req.params.path);
+    this.authenticate(req.authToken, req.params.path);
     this.graphiql(req, res, next);
   }
 
   @Post('/explore/:path')
-  private postExplore(@Request() req: express.Request, @Response() res: express.Response, @Next() next) {
+  private postExplore(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
     if (this.disableExplorer) {
       throw new errors.realm.AccessDenied();
     }
 
-    this.authenticate((req as any).authToken, req.params.path);
+    this.authenticate(req.authToken, req.params.path);
     this.graphiql(req, res, next);
   }
 
   @Get('/:path')
-  private get(@Request() req: express.Request, @Response() res: express.Response, @Next() next) {
-    this.authenticate((req as any).authToken, req.params.path);
+  private get(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
+    this.authenticate(req.authToken, req.params.path);
     this.handler(req, res, next);
   }
 
   @Post('/:path')
-  private post(@Request() req: express.Request, @Response() res: express.Response, @Next() next) {
-    this.authenticate((req as any).authToken, req.params.path);
+  private post(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
+    this.authenticate(req.authToken, req.params.path);
     this.handler(req, res, next);
   }
 
   @Delete('/schema/:path')
-  private deleteSchema(@Request() req: express.Request, @Response() res: express.Response) {
-    this.authenticate((req as any).authToken);
+  private deleteSchema(@Request() req: RosRequest, @Response() res: express.Response) {
+    this.authenticate(req.authToken);
     this.schemaCache.del(req.params.path);
     res.status(204).send({});
   }
@@ -525,7 +523,7 @@ export class GraphQLService {
         }
 
         const opId = context.operationId;
-        this.querysubscriptions[opId] = {
+        this.querySubscriptions[opId] = {
           results: result,
           realm
         };
@@ -709,19 +707,6 @@ export class GraphQLService {
         result,
         hasChanges
     };
-  }
-
-  private async updateSubscriptionSchema(context: any): Promise<GraphQLSchema> {
-    const path = context.realmPath;
-    if (!path) {
-      throw new GraphQLError('Missing "realmPath" from context. It is required for subscriptions.');
-    }
-    const realm = await this.openRealm(path);
-    const schema = this.getSchema(path, realm);
-
-    context.realm = realm;
-
-    return schema;
   }
 
   private getPropertySchema(obj: ObjectSchema): PropertySchemaInfo {
