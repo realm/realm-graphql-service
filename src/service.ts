@@ -1,35 +1,35 @@
-import { ExpressHandler, graphiqlExpress, graphqlExpress } from 'apollo-server-express';
-import * as express from 'express';
-import { execute, GraphQLError, GraphQLScalarType, GraphQLSchema, subscribe } from 'graphql';
-import { PubSub } from 'graphql-subscriptions';
-import { makeExecutableSchema } from 'graphql-tools';
-import { IResolverObject } from 'graphql-tools/dist/Interfaces';
-import * as LRU from 'lru-cache';
-import * as pluralize from 'pluralize';
-import { ObjectSchema, ObjectSchemaProperty } from 'realm';
+import { ExpressHandler, graphiqlExpress, graphqlExpress } from "apollo-server-express";
+import { GraphiQLData } from "apollo-server-module-graphiql";
+import * as express from "express";
+import { execute, GraphQLError, GraphQLScalarType, GraphQLSchema, subscribe } from "graphql";
+import { PubSub } from "graphql-subscriptions";
+import { makeExecutableSchema } from "graphql-tools";
+import { IResolverObject } from "graphql-tools/dist/Interfaces";
+import * as LRU from "lru-cache";
+import * as pluralize from "pluralize";
+import { ObjectSchema, ObjectSchemaProperty } from "realm";
 import {
     AccessToken,
     BaseRoute,
+    Cors,
+    Delete,
     errors,
     Get,
+    isAdminToken,
+    Next,
     Post,
     Request,
     Response,
+    RosRequest,
     Server,
     ServerStarted,
     Stop,
     Token,
     Upgrade,
-    Delete,
-    isAdminToken,
-    Next,
-    Cors,
-    RosRequest,
-} from 'realm-object-server';
-import { SubscriptionServer } from 'subscriptions-transport-ws';
-import { setTimeout } from 'timers';
-import { v4 } from 'uuid';
-import { GraphiQLData } from 'apollo-server-module-graphiql';
+} from "realm-object-server";
+import { SubscriptionServer } from "subscriptions-transport-ws";
+import { setTimeout } from "timers";
+import { v4 } from "uuid";
 
 interface SchemaTypes {
   type: string;
@@ -63,7 +63,7 @@ export interface GraphQLServiceSettings {
    * drastically reduces performance. If not set, or set to a [[SchemaCacheSettings]]
    * instance, schemas will be cached.
    */
-  schemaCacheSettings?: SchemaCacheSettings | 'NoCache';
+  schemaCacheSettings?: SchemaCacheSettings | "NoCache";
 
   /**
    * Disables authentication for graphql endpoints. This may be useful when
@@ -113,21 +113,21 @@ export interface SchemaCacheSettings {
 }
 
 const Base64Type = new GraphQLScalarType({
-  name: 'Base64',
-  description: 'A base64-encoded binary blob',
+  name: "Base64",
+  description: "A base64-encoded binary blob",
   serialize(value) {
-    return Buffer.from(value).toString('base64');
+    return Buffer.from(value).toString("base64");
   },
   parseValue(value) {
-    return Buffer.from(value, 'base64');
+    return Buffer.from(value, "base64");
   },
   parseLiteral(ast) {
-    if (ast.kind === 'StringValue') {
-      return Buffer.from(ast.value, 'base64');
+    if (ast.kind === "StringValue") {
+      return Buffer.from(ast.value, "base64");
     }
 
     throw new TypeError(`Expected StringValue literal, but got ${ast.kind}`);
-  }
+  },
 });
 
 /**
@@ -148,8 +148,8 @@ const Base64Type = new GraphQLScalarType({
  * server.start();
  * ```
  */
-@BaseRoute('/graphql')
-@Cors('/')
+@BaseRoute("/graphql")
+@Cors("/")
 export class GraphQLService {
   private readonly schemaCache: LRU.Cache<string, GraphQLSchema>;
   private readonly disableAuthentication: boolean;
@@ -173,10 +173,10 @@ export class GraphQLService {
   constructor(settings?: GraphQLServiceSettings) {
     settings = settings || {};
 
-    if (settings.schemaCacheSettings !== 'NoCache') {
+    if (settings.schemaCacheSettings !== "NoCache") {
       this.schemaCache = new LRU({
         max: (settings.schemaCacheSettings && settings.schemaCacheSettings.max) || 1000,
-        maxAge: settings.schemaCacheSettings && settings.schemaCacheSettings.maxAge
+        maxAge: settings.schemaCacheSettings && settings.schemaCacheSettings.maxAge,
       });
     }
 
@@ -234,13 +234,13 @@ export class GraphQLService {
           }
 
           return {
-            accessToken
+            accessToken,
           };
-        }
+        },
       },
       {
-        noServer: true
-      }
+        noServer: true,
+      },
     );
 
     this.handler = graphqlExpress(async (req, res) => {
@@ -248,7 +248,7 @@ export class GraphQLService {
       const realm = await this.openRealm(path);
       const schema = this.getSchema(path, realm);
 
-      res.once('finish', () => {
+      res.once("finish", () => {
         this.closeRealm(realm);
       });
 
@@ -256,8 +256,8 @@ export class GraphQLService {
         schema,
         context: {
           realm,
-          accessToken: (req as any).authToken
-        }
+          accessToken: (req as any).authToken,
+        },
       };
     });
 
@@ -273,16 +273,16 @@ export class GraphQLService {
           protocol = "ws";
           break;
         default:
-          protocol = req.protocol === 'https' ? 'wss' : 'ws';
+          protocol = req.protocol === "https" ? "wss" : "ws";
           break;
       }
 
       const result: GraphiQLData = {
         endpointURL: `/graphql/${encodeURIComponent(path)}`,
-        subscriptionsEndpoint: `${protocol}://${req.get('host')}/graphql/${encodeURIComponent(path)}`
+        subscriptionsEndpoint: `${protocol}://${req.get("host")}/graphql/${encodeURIComponent(path)}`,
       };
 
-      const token = req.get('authorization');
+      const token = req.get("authorization");
       if (token) {
         result.passHeader = `'Authorization': '${token}'`;
         result.websocketConnectionParams = { token };
@@ -297,7 +297,7 @@ export class GraphQLService {
     this.subscriptionServer.close();
   }
 
-  @Upgrade('/:path')
+  @Upgrade("/:path")
   private async subscriptionHandler(req, socket, head) {
     const wsServer = this.subscriptionServer.server;
     const ws = await new Promise<any>((resolve) => wsServer.handleUpgrade(req, socket, head, resolve));
@@ -306,10 +306,10 @@ export class GraphQLService {
     // and resolving it in subscriptionServer.onOperation to
     // populate it in the subscription context.
     ws.realmPath = req.params.path;
-    wsServer.emit('connection', ws, req);
+    wsServer.emit("connection", ws, req);
   }
 
-  @Get('/explore/:path')
+  @Get("/explore/:path")
   private getExplore(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
     if (this.disableExplorer) {
       throw new errors.realm.AccessDenied();
@@ -319,7 +319,7 @@ export class GraphQLService {
     this.graphiql(req, res, next);
   }
 
-  @Post('/explore/:path')
+  @Post("/explore/:path")
   private postExplore(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
     if (this.disableExplorer) {
       throw new errors.realm.AccessDenied();
@@ -329,19 +329,19 @@ export class GraphQLService {
     this.graphiql(req, res, next);
   }
 
-  @Get('/:path')
+  @Get("/:path")
   private get(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
     this.authenticate(req.authToken, req.params.path);
     this.handler(req, res, next);
   }
 
-  @Post('/:path')
+  @Post("/:path")
   private post(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
     this.authenticate(req.authToken, req.params.path);
     this.handler(req, res, next);
   }
 
-  @Delete('/schema/:path')
+  @Delete("/schema/:path")
   private deleteSchema(@Request() req: RosRequest, @Response() res: express.Response) {
     this.authenticate(req.authToken);
     this.schemaCache.del(req.params.path);
@@ -360,7 +360,7 @@ export class GraphQLService {
     }
 
     if (!authToken) {
-      throw new errors.realm.AccessDenied({ detail: 'Authorization header is missing.' });
+      throw new errors.realm.AccessDenied({ detail: "Authorization header is missing." });
     }
 
     if (!isAdminToken(authToken) && (!path || authToken.path !== path)) {
@@ -376,7 +376,7 @@ export class GraphQLService {
     const token = context.accessToken as AccessToken;
     if (!token || !token.access || token.access.indexOf(access) < 0) {
       throw new errors.realm.InvalidCredentials({
-        title: `The current user doesn't have '${access}' access.`
+        title: `The current user doesn't have '${access}' access.`,
       });
     }
   }
@@ -388,11 +388,11 @@ export class GraphQLService {
   }
 
   private validateRead(context: any) {
-    this.validateAccess(context, 'download');
+    this.validateAccess(context, "download");
   }
 
   private validateWrite(context: any) {
-    this.validateAccess(context, 'upload');
+    this.validateAccess(context, "upload");
   }
 
   private getSchema(path: string, realm: Realm): GraphQLSchema {
@@ -422,9 +422,9 @@ export class GraphQLService {
       schema += `input ${obj.name}Input { \n${propertyInfo.inputPropertySchema}}\n\n`;
     }
 
-    let query = 'type Query {\n';
-    let mutation = 'type Mutation {\n';
-    let subscription = 'type Subscription {\n';
+    let query = "type Query {\n";
+    let mutation = "type Mutation {\n";
+    let subscription = "type Subscription {\n";
 
     for (const [type, pk] of types) {
       // TODO: this assumes types are PascalCase
@@ -445,9 +445,9 @@ export class GraphQLService {
       }
     }
 
-    query += '}\n\n';
-    mutation += '}\n\n';
-    subscription += '}';
+    query += "}\n\n";
+    mutation += "}\n\n";
+    subscription += "}";
 
     schema += query;
     schema += mutation;
@@ -459,7 +459,7 @@ export class GraphQLService {
         Query: queryResolver,
         Mutation: mutationResolver,
         Subscription: subscriptionResolver,
-        [Base64Type.name]: Base64Type
+        [Base64Type.name]: Base64Type,
       },
     });
 
@@ -525,7 +525,7 @@ export class GraphQLService {
         const opId = context.operationId;
         this.querySubscriptions[opId] = {
           results: result,
-          realm
+          realm,
         };
 
         result.addListener((collection, change) => {
@@ -535,7 +535,7 @@ export class GraphQLService {
         });
 
         return this.pubsub.asyncIterator(opId);
-      }
+      },
     };
 
     // TODO: limit sortBy to only valid properties
@@ -575,8 +575,7 @@ export class GraphQLService {
       try {
         const response = this.upsertObject(context, args.input, type);
         return response.result;
-      }
-      catch (err) {
+      } catch (err) {
         if (context.realm.isInTransaction) {
           context.realm.cancelTransaction();
         }
@@ -635,10 +634,10 @@ export class GraphQLService {
     context: { realm: Realm },
     newObject: any,
     type: string,
-    shouldBeginTransaction = true
+    shouldBeginTransaction = true,
   ): {
     result: any,
-    hasChanges: boolean
+    hasChanges: boolean,
   } {
     const objectSchema = context.realm.schema.find((s) => s.name === type);
     const pkName = objectSchema.primaryKey;
@@ -662,7 +661,7 @@ export class GraphQLService {
 
         const prop = objectSchema.properties[propertyName] as Realm.ObjectSchemaProperty;
         switch (prop.type) {
-          case 'object':
+          case "object":
             const link = this.upsertObject(context, newObject[propertyName], prop.objectType, false);
             hasChanges = hasChanges || link.hasChanges;
             if (!result[propertyName]._isSameObject(link.result)) {
@@ -670,19 +669,19 @@ export class GraphQLService {
               result[propertyName] = link.result;
             }
             break;
-          case 'date':
+          case "date":
             if (!this.datesEqual(result[propertyName], newObject[propertyName])) {
               hasChanges = true;
               result[propertyName] = newObject[propertyName];
             }
             break;
-          case 'list':
+          case "list":
             // TODO do a better diff
             hasChanges = true;
             result[propertyName] = [];
             for (const item of newObject[propertyName]) {
-                const link = this.upsertObject(context, item, prop.objectType, false);
-                result[propertyName].push(link.result);
+                const upserted = this.upsertObject(context, item, prop.objectType, false);
+                result[propertyName].push(upserted.result);
             }
             break;
           default:
@@ -705,13 +704,13 @@ export class GraphQLService {
 
     return {
         result,
-        hasChanges
+        hasChanges,
     };
   }
 
   private getPropertySchema(obj: ObjectSchema): PropertySchemaInfo {
-    let schemaProperties = '';
-    let inputSchemaProperties = '';
+    let schemaProperties = "";
+    let inputSchemaProperties = "";
     let primaryKey: PKInfo = null;
 
     for (const key in obj.properties) {
@@ -721,7 +720,7 @@ export class GraphQLService {
       }
 
       const prop = obj.properties[key] as ObjectSchemaProperty;
-      if (prop.type === 'linkingObjects') {
+      if (prop.type === "linkingObjects") {
         continue;
       }
 
@@ -736,7 +735,7 @@ export class GraphQLService {
       if (key === obj.primaryKey) {
         primaryKey = {
           name: key,
-          type: types.type
+          type: types.type,
         };
       }
     }
@@ -744,7 +743,7 @@ export class GraphQLService {
     return {
       propertySchema: schemaProperties,
       inputPropertySchema: inputSchemaProperties,
-      pk: primaryKey
+      pk: primaryKey,
     };
   }
 
@@ -752,11 +751,11 @@ export class GraphQLService {
     let type: string;
     let inputType: string;
     switch (prop.type) {
-      case 'object':
+      case "object":
         type = prop.objectType;
         inputType = `${prop.objectType}Input`;
         break;
-      case 'list':
+      case "list":
         const innerType = this.getPrimitiveTypeString(prop.objectType, prop.optional);
         if (this.isReserved(innerType)) {
           return undefined;
@@ -764,13 +763,13 @@ export class GraphQLService {
         type = `[${innerType}]`;
 
         switch (prop.objectType) {
-          case 'bool':
-          case 'int':
-          case 'float':
-          case 'double':
-          case 'date':
-          case 'string':
-          case 'data':
+          case "bool":
+          case "int":
+          case "float":
+          case "double":
+          case "date":
+          case "string":
+          case "data":
             inputType = type;
             break;
           default:
@@ -791,23 +790,23 @@ export class GraphQLService {
   }
 
   private getPrimitiveTypeString(prop: string, optional: boolean): string {
-    let result = '';
+    let result = "";
     switch (prop) {
-      case 'bool':
-        result = 'Boolean';
+      case "bool":
+        result = "Boolean";
         break;
-      case 'int':
-        result = 'Int';
+      case "int":
+        result = "Int";
         break;
-      case 'float':
-      case 'double':
-        result = 'Float';
+      case "float":
+      case "double":
+        result = "Float";
         break;
-      case 'date':
-      case 'string':
-        result = 'String';
+      case "date":
+      case "string":
+        result = "String";
         break;
-      case 'data':
+      case "data":
         result = Base64Type.name;
         break;
       default:
@@ -815,7 +814,7 @@ export class GraphQLService {
     }
 
     if (!optional) {
-      result += '!';
+      result += "!";
     }
 
     return result;
@@ -866,8 +865,7 @@ export class GraphQLService {
       }
 
       return first.getTime() === second.getTime();
-    }
-    catch (err) {
+    } catch (err) {
       return false;
     }
   }
@@ -888,7 +886,7 @@ export class GraphQLService {
       value = (realm: Realm, event: string, schema: Realm.ObjectSchema[]) => {
         this.schemaCache.del(path);
         this.getSchema(path, realm);
-      }
+      };
       this.schemaHandlers[path] = value;
     }
 
