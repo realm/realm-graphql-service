@@ -1,3 +1,3 @@
 /* tslint:disable:no-console */
 
-export * from './service';
+export * from "./service";

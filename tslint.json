@@ -7,25 +7,25 @@
       "object-literal-sort-keys": false,
       "jsx-boolean-value": false,
       "jsx-no-lambda": false,
+      "max-line-length": false,
       "no-submodule-imports": [
         true,
         "graphql-tools"
       ],
-      "no-implicit-dependencies": [
-        "optional"
-      ],
+      "no-implicit-dependencies": false,
       "quotemark": [
         true,
-        "single"
+        "double",
+        "avoid-escape"
       ],
-      "trailing-comma": {
-        "multiline": "never",
-        "singleline": "never"
-      },
+      "trailing-comma": [true, {
+        "multiline": "always",
+        "singleline": "never",
+        "esSpecCompliant": true
+      }],
       "interface-name": [
         true,
         "never-prefix"
       ]
     }
   }
-  

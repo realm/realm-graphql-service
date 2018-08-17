@@ -1,19 +1,19 @@
 /* tslint:disable:no-console */
 
-import * as path from 'path';
-import { BasicServer } from 'realm-object-server';
-import { GraphQLService } from './service';
+import * as path from "path";
+import { BasicServer } from "realm-object-server";
+import { GraphQLService } from "./service";
 
 const server = new BasicServer();
 
 server.addService(new GraphQLService({
-  disableAuthentication: true
+  disableAuthentication: true,
 }));
 
 server
   .start({
-    dataPath: path.join(__dirname, '../data'),
-    jsonBodyLimit: '10mb'
+    dataPath: path.join(__dirname, "../data"),
+    jsonBodyLimit: "10mb",
   })
   .then(() => {
     console.log(`Realm Object Server was started on ${server.address}`);
