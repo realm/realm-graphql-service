@@ -95,6 +95,12 @@ export interface GraphQLServiceSettings {
    * leading to incorrect websocket protocol being used.
    */
   forceExplorerSSL?: boolean;
+
+  /**
+   * Controls whether the total count of the objects matched by the query will be
+   * returned as a property in the query and subscription responses. Default is false.
+   */
+  includeCountInResponses?: boolean;
 }
 
 /**
@@ -157,6 +163,7 @@ export class GraphQLService {
   private readonly disableExplorer: boolean;
   private readonly schemaHandlers: { [path: string]: (realm: Realm, event: string, schema: Realm.ObjectSchema[]) => void } = {};
   private readonly forceExplorerSSL: boolean | undefined;
+  private readonly includeCountInResponses: boolean;
 
   private server: Server;
   private subscriptionServer: SubscriptionServer;
@@ -184,6 +191,7 @@ export class GraphQLService {
     this.disableExplorer = settings.disableExplorer || false;
     this.realmCacheTTL = settings.realmCacheMaxAge || 120000;
     this.forceExplorerSSL = settings.forceExplorerSSL;
+    this.includeCountInResponses = settings.includeCountInResponses || false;
   }
 
   @ServerStarted()
@@ -400,9 +408,7 @@ export class GraphQLService {
       return this.schemaCache.get(path);
     }
 
-    let schema = `
-    scalar ${Base64Type.name}
-    `;
+    let schema = `\nscalar ${Base64Type.name}\n`;
 
     const types = new Array<[string, PKInfo]>();
     const queryResolver: IResolverObject = {};
@@ -419,6 +425,10 @@ export class GraphQLService {
       types.push([obj.name, propertyInfo.pk]);
 
       schema += `type ${obj.name} { \n${propertyInfo.propertySchema}}\n\n`;
+      schema += `type ${obj.name}Collection {
+        count: Int!
+        items: [${obj.name}!]
+      }\n`;
       schema += `input ${obj.name}Input { \n${propertyInfo.inputPropertySchema}}\n\n`;
     }
 
@@ -474,7 +484,7 @@ export class GraphQLService {
     queryResolver[pluralType] = (_, args, context) => {
       this.validateRead(context);
 
-      let result: any = context.realm.objects(type);
+      let result = context.realm.objects(type);
       if (args.query) {
         result = result.filtered(args.query);
       }
@@ -484,11 +494,12 @@ export class GraphQLService {
         result = result.sorted(args.sortBy, descending);
       }
 
-      return this.slice(result, args);
+      return this.getCollectionResponse(result, args);
     };
 
     // TODO: limit sortBy to only valid properties
-    return `${pluralType}(query: String, sortBy: String, descending: Boolean, skip: Int, take: Int): [${type}!]\n`;
+    const responseType = this.includeCountInResponses ? `${type}Collection` : `[${type}!]`;
+    return `${pluralType}(query: String, sortBy: String, descending: Boolean, skip: Int, take: Int): ${responseType}\n`;
   }
 
   private setupAddObject(mutationResolver: IResolverObject, type: string): string {
@@ -530,7 +541,7 @@ export class GraphQLService {
 
         result.addListener((collection, change) => {
           const payload = {};
-          payload[pluralType] = this.slice(collection, args);
+          payload[pluralType] = this.getCollectionResponse(collection, args);
           this.pubsub.publish(opId, payload);
         });
 
@@ -539,7 +550,8 @@ export class GraphQLService {
     };
 
     // TODO: limit sortBy to only valid properties
-    return `${pluralType}(query: String, sortBy: String, descending: Boolean, skip: Int, take: Int): [${type}!]\n`;
+    const responseType = this.includeCountInResponses ? `${type}Collection` : `[${type}!]`;
+    return `${pluralType}(query: String, sortBy: String, descending: Boolean, skip: Int, take: Int): ${responseType}\n`;
   }
 
   private setupGetObjectByPK(queryResolver: IResolverObject, type: string, camelCasedType: string, pk: PKInfo): string {
@@ -820,17 +832,22 @@ export class GraphQLService {
     return result;
   }
 
-  private slice(collection: any, args: { [key: string]: any }): any {
+  private getCollectionResponse(collection: any, args: { skip?: number, take?: number }): any {
+    let result = collection;
     if (args.skip || args.take) {
       const skip = args.skip || 0;
-      if (args.take) {
-        return collection.slice(skip, args.take + skip);
-      }
-
-      return collection.slice(skip);
+      const take = args.take ? (args.take + skip) : undefined;
+      result = collection.slice(skip, take);
     }
 
-    return collection;
+    if (this.includeCountInResponses) {
+      return {
+        count: collection.length,
+        items: result,
+      };
+    }
+
+    return result;
   }
 
   private camelcase(value: string): string {

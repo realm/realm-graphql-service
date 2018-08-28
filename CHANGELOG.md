@@ -1,6 +1,9 @@
 # NEXT RELEASE
 
 ### Enhancements
+* Added a configuration option to include the objects matching the query in the collection response. It is not
+`true` by default because it changes the response type slightly, which would break existing clients. It can be
+enabled by passing `includeCountInResponses: true` in the `GraphQLService` constructor.
 
 ### Bug fixes
 
