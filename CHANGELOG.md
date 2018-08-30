@@ -1,6 +1,7 @@
 # NEXT RELEASE
 
 ### Enhancements
+* Lifted the requirement to url-encode Realm paths.
 
 ### Bug fixes
 
