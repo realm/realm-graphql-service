@@ -252,7 +252,7 @@ export class GraphQLService {
     );
 
     this.handler = graphqlExpress(async (req, res) => {
-      const path = req.params.path;
+      const path = this.getPath(req);
       const realm = await this.openRealm(path);
       const schema = this.getSchema(path, realm);
 
@@ -270,7 +270,7 @@ export class GraphQLService {
     });
 
     this.graphiql = graphiqlExpress((req) => {
-      const path = req.params.path;
+      const path = this.getPath(req);
 
       let protocol: string;
       switch (this.forceExplorerSSL) {
@@ -305,7 +305,7 @@ export class GraphQLService {
     this.subscriptionServer.close();
   }
 
-  @Upgrade("/:path")
+  @Upgrade("/*")
   private async subscriptionHandler(req, socket, head) {
     const wsServer = this.subscriptionServer.server;
     const ws = await new Promise<any>((resolve) => wsServer.handleUpgrade(req, socket, head, resolve));
@@ -313,47 +313,60 @@ export class GraphQLService {
     // HACK: we're putting the realmPath on the socket client
     // and resolving it in subscriptionServer.onOperation to
     // populate it in the subscription context.
-    ws.realmPath = req.params.path;
+    ws.realmPath = this.getPath(req);
     wsServer.emit("connection", ws, req);
   }
 
-  @Get("/explore/:path")
+  @Get("/explore/*")
   private getExplore(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
     if (this.disableExplorer) {
       throw new errors.realm.AccessDenied();
     }
 
-    this.authenticate(req.authToken, req.params.path);
+    this.authenticateRequest(req);
     this.graphiql(req, res, next);
   }
 
-  @Post("/explore/:path")
+  @Post("/explore/*")
   private postExplore(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
     if (this.disableExplorer) {
       throw new errors.realm.AccessDenied();
     }
 
-    this.authenticate(req.authToken, req.params.path);
+    this.authenticateRequest(req);
     this.graphiql(req, res, next);
   }
 
-  @Get("/:path")
+  @Get("/*")
   private get(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
-    this.authenticate(req.authToken, req.params.path);
+    this.authenticateRequest(req);
     this.handler(req, res, next);
   }
 
-  @Post("/:path")
+  @Post("/*")
   private post(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
-    this.authenticate(req.authToken, req.params.path);
+    this.authenticateRequest(req);
     this.handler(req, res, next);
   }
 
-  @Delete("/schema/:path")
+  @Delete("/schema/*")
   private deleteSchema(@Request() req: RosRequest, @Response() res: express.Response) {
-    this.authenticate(req.authToken);
-    this.schemaCache.del(req.params.path);
+    this.authenticateRequest(req);
+    this.schemaCache.del(this.getPath(req));
     res.status(204).send({});
+  }
+
+  private getPath(req: RosRequest): string {
+    let path = req.params["0"];
+    if (!path.startsWith("/")) {
+      path = `/${path}`;
+    }
+
+    return path;
+  }
+
+  private authenticateRequest(req: RosRequest) {
+    this.authenticate(req.authToken, this.getPath(req));
   }
 
   /**
