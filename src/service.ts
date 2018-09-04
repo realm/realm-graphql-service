@@ -29,6 +29,7 @@ import {
 } from "realm-object-server";
 import { SubscriptionServer } from "subscriptions-transport-ws";
 import { setTimeout } from "timers";
+import * as url from "url";
 import { v4 } from "uuid";
 
 interface SchemaTypes {
@@ -305,7 +306,7 @@ export class GraphQLService {
     this.subscriptionServer.close();
   }
 
-  @Upgrade("/*")
+  @Upgrade("/:path+")
   private async subscriptionHandler(req, socket, head) {
     const wsServer = this.subscriptionServer.server;
     const ws = await new Promise<any>((resolve) => wsServer.handleUpgrade(req, socket, head, resolve));
@@ -313,7 +314,8 @@ export class GraphQLService {
     // HACK: we're putting the realmPath on the socket client
     // and resolving it in subscriptionServer.onOperation to
     // populate it in the subscription context.
-    ws.realmPath = this.getPath(req);
+    const path = url.parse(req.url).path.replace("/graphql/", "");
+    ws.realmPath = this.getPath(path);
     wsServer.emit("connection", ws, req);
   }
 
@@ -356,8 +358,8 @@ export class GraphQLService {
     res.status(204).send({});
   }
 
-  private getPath(req: RosRequest): string {
-    let path = req.params["0"];
+  private getPath(reqOrPath: RosRequest | string): string {
+    let path = typeof reqOrPath === "string" ? decodeURIComponent(reqOrPath) : reqOrPath.params["0"];
     if (!path.startsWith("/")) {
       path = `/${path}`;
     }
