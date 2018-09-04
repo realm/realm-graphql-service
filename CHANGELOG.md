@@ -1,10 +1,7 @@
-# NEXT RELEASE
-
-### Enhancements
+# 3.2.1
 
 ### Bug fixes
-
-### Breaking Changes
+* Fixed a bug where subscriptions and queries over websocket would not work. This was a regression introduced with 3.2.0.
 
 # 3.2.0
 
