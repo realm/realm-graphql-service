@@ -1,3 +1,8 @@
+# 3.2.2
+
+### Bug fixes
+* Pinned the Apollo dependencies to 1.3.6 as 1.4.0 is breaking the GraphiQL explorer functionality.
+
 # 3.2.1
 
 ### Bug fixes
