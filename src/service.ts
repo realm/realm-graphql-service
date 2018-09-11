@@ -102,6 +102,16 @@ export interface GraphQLServiceSettings {
    * returned as a property in the query and subscription responses. Default is false.
    */
   includeCountInResponses?: boolean;
+
+  /**
+   * Controls whether integers in the schema will be represented as Floats in the GraphQL
+   * schema. GraphQL's integer type is 32 bit which means that it can't hold values larger
+   * than 2,147,483,647. Representing them as floats expands the range to 2^53 - 1, but
+   * prevents tools from properly enforcing type safety. This means that type mismatch
+   * errors (e.g. a floating point number is passed in a mutation instead of an integer)
+   * will get thrown further down the stack and may be harder to interpret. Default is false.
+   */
+  presentIntsAsFloatsInSchema?: boolean;
 }
 
 /**
@@ -165,6 +175,7 @@ export class GraphQLService {
   private readonly schemaHandlers: { [path: string]: (realm: Realm, event: string, schema: Realm.ObjectSchema[]) => void } = {};
   private readonly forceExplorerSSL: boolean | undefined;
   private readonly includeCountInResponses: boolean;
+  private readonly presentIntsAsFloatsInSchema: boolean;
 
   private server: Server;
   private subscriptionServer: SubscriptionServer;
@@ -193,6 +204,7 @@ export class GraphQLService {
     this.realmCacheTTL = settings.realmCacheMaxAge || 120000;
     this.forceExplorerSSL = settings.forceExplorerSSL;
     this.includeCountInResponses = settings.includeCountInResponses || false;
+    this.presentIntsAsFloatsInSchema = settings.presentIntsAsFloatsInSchema || false;
   }
 
   @ServerStarted()
@@ -823,7 +835,7 @@ export class GraphQLService {
         result = "Boolean";
         break;
       case "int":
-        result = "Int";
+        result = this.presentIntsAsFloatsInSchema ? "Float" : "Int";
         break;
       case "float":
       case "double":

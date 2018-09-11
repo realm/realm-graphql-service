@@ -1,3 +1,13 @@
+# 3.3.0
+
+### Enhancements
+* Added a configuration option to represent integers as `Float` in the GraphQL schema. Since Realm integers
+can be up to 64-bit and the GraphQL `Int` type is limited to 32-bits, this setting allows you to extend the
+range of the numbers you can query to match javascript's limit (2^53 - 1). The downside is that you'll lose
+the type checking and you may accidentally pass floats where integers are expected. Doing so will cause Realm
+to automatically round the number down and treat it as an integer. To enable that option, pass
+`presentIntsAsFloatsInSchema: true` in the `GraphQLService` constructor.
+
 # 3.2.2
 
 ### Bug fixes
