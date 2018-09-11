@@ -1,4 +1,4 @@
-# 3.3.0
+# 3.3.0 (2018-09-11)
 
 ### Enhancements
 * Added a configuration option to represent integers as `Float` in the GraphQL schema. Since Realm integers
@@ -8,17 +8,22 @@ the type checking and you may accidentally pass floats where integers are expect
 to automatically round the number down and treat it as an integer. To enable that option, pass
 `presentIntsAsFloatsInSchema: true` in the `GraphQLService` constructor.
 
-# 3.2.2
+### Known notable issues
+* There is currently no support for working with query-based sync (#70). 
+
+# 3.2.2 (2018-09-10)
 
 ### Bug fixes
 * Pinned the Apollo dependencies to 1.3.6 as 1.4.0 is breaking the GraphiQL explorer functionality.
 
-# 3.2.1
+
+# 3.2.1 (2018-09-04)
 
 ### Bug fixes
 * Fixed a bug where subscriptions and queries over websocket would not work. This was a regression introduced with 3.2.0.
 
-# 3.2.0
+
+# 3.2.0 (2018-08-28)
 
 ### Enhancements
 * Added a configuration option to include the objects matching the query in the collection response. It is not
@@ -26,10 +31,12 @@ to automatically round the number down and treat it as an integer. To enable tha
 enabled by passing `includeCountInResponses: true` in the `GraphQLService` constructor.
 * Lifted the requirement to url-encode Realm paths.
 
+
 # 3.1.0
 
 ### Enhancements
 * Queries and mutations over websocket are now supported.
+
 
 # 3.0.0
 
@@ -61,15 +68,18 @@ enabled by passing `includeCountInResponses: true` in the `GraphQLService` const
   }
   ```
 
+
 # 2.6.0
 
 ### Enhancements
 * Expose option to force the explorer to use SSL for websockets.
 
+
 # 2.5.2
 
 ### Bug fixes
 * Applied the CORS middleware to the GraphQL service.
+
 
 # 2.5.1
 
@@ -77,10 +87,12 @@ enabled by passing `includeCountInResponses: true` in the `GraphQLService` const
 * Fixed an issue that caused querying realms with types/properties that started with double underscores to throw
 an obscure type error.
 
+
 # 2.5.0
 
-### Enahancements
+### Enhancements
 * Updated dependencies to their latest versions to avoid the issue with the `@types/graphql` package missing.
+
 
 # 2.4.0
 
@@ -91,10 +103,12 @@ to manually invalidate it if you change the schema of a Realm that is not open b
 ### Bug fixes
 * The Realm schema will be properly updated after cache invalidation.
 
+
 # 2.3.2
 
 ### Bug fixes
 * Fixed a bug that caused subscriptions to trigger for unrelated changes.
+
 
 # 2.3.1
 
