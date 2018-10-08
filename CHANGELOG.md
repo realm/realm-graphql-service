@@ -12,7 +12,7 @@ to automatically round the number down and treat it as an integer. To enable tha
 * None
 
 ### Compatibility
-* Compatible with all Realm Object Server releases in the 3.x series.
+* Compatible with Realm Object Server releases from 3.8.1 or later.
 
 ### Known notable issues
 * There is currently no direct support for working with query-based sync (#70) and related object level permissions.
