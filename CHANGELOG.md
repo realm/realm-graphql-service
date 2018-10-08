@@ -8,8 +8,16 @@ the type checking and you may accidentally pass floats where integers are expect
 to automatically round the number down and treat it as an integer. To enable that option, pass
 `presentIntsAsFloatsInSchema: true` in the `GraphQLService` constructor.
 
+### Fixed
+* None
+
+### Compatibility
+* Compatible with all Realm Object Server releases in the 3.x series.
+
 ### Known notable issues
-* There is currently no support for working with query-based sync (#70). 
+* There is currently no direct support for working with query-based sync (#70) and related object level permissions.
+You can query the reference realm with the same queries as you would normally use.
+
 
 # 3.2.2 (2018-09-10)
 
