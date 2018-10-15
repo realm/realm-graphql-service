@@ -6,6 +6,7 @@ import { PubSub } from "graphql-subscriptions";
 import { makeExecutableSchema } from "graphql-tools";
 import { IResolverObject } from "graphql-tools/dist/Interfaces";
 import * as LRU from "lru-cache";
+import * as moment from "moment";
 import * as pluralize from "pluralize";
 import { ObjectSchema, ObjectSchemaProperty } from "realm";
 import {
@@ -14,10 +15,12 @@ import {
     Cors,
     Delete,
     errors,
+    extractPartialInfo,
     Get,
     isAdminToken,
     Next,
     Post,
+    RefreshToken,
     Request,
     Response,
     RosRequest,
@@ -51,6 +54,10 @@ interface PropertySchemaInfo {
 interface SubscriptionDetails {
   results: Realm.Results<{}>;
   realm: Realm;
+}
+
+interface GraphQLRequest extends RosRequest {
+  user: Realm.Sync.User;
 }
 
 /**
@@ -239,23 +246,25 @@ export class GraphQLService {
 
           socket.id = v4();
           params.context.operationId = getOperationId(socket, message.id);
-          params.context.realm = await this.openRealm(socket.realmPath);
+          params.context.realm = await this.openRealm(socket.realmPath, params.context.user);
           params.schema = this.getSchema(socket.realmPath, params.context.realm);
           return params;
         },
         onConnect: async (authPayload, socket) => {
           let accessToken: Token;
+          let user: Realm.Sync.User;
           if (!this.disableAuthentication) {
             if (!authPayload || !authPayload.token) {
               throw new errors.realm.MissingParameters("Missing 'connectionParams.token'.");
             }
 
             accessToken = this.server.tokenValidator.parse(authPayload.token);
-            this.authenticate(accessToken, socket.realmPath);
+            user = await this.authenticate(accessToken, socket.realmPath);
           }
 
           return {
             accessToken,
+            user,
           };
         },
       },
@@ -264,25 +273,25 @@ export class GraphQLService {
       },
     );
 
-    this.handler = graphqlExpress(async (req, res) => {
-      const path = this.getPath(req);
-      const realm = await this.openRealm(path);
-      const schema = this.getSchema(path, realm);
-
+    this.handler = graphqlExpress(async (req: GraphQLRequest, res) => {
       res.once("finish", () => {
         this.closeRealm(realm);
       });
+
+      const path = this.getPath(req);
+      const realm = await this.openRealm(path, req.user);
+      const schema = this.getSchema(path, realm);
 
       return {
         schema,
         context: {
           realm,
-          accessToken: (req as any).authToken,
+          accessToken: req.authToken,
         },
       };
     });
 
-    this.graphiql = graphiqlExpress((req) => {
+    this.graphiql = graphiqlExpress((req: GraphQLRequest) => {
       const path = this.getPath(req);
 
       let protocol: string;
@@ -303,7 +312,7 @@ export class GraphQLService {
         subscriptionsEndpoint: `${protocol}://${req.get("host")}/graphql/${encodeURIComponent(path)}`,
       };
 
-      const token = req.get("authorization");
+      const token = req.rawAuthToken;
       if (token) {
         result.passHeader = `'Authorization': '${token}'`;
         result.websocketConnectionParams = { token };
@@ -332,45 +341,45 @@ export class GraphQLService {
   }
 
   @Get("/explore/*")
-  private getExplore(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
+  private async getExplore(@Request() req: GraphQLRequest, @Response() res: express.Response, @Next() next) {
     if (this.disableExplorer) {
       throw new errors.realm.AccessDenied();
     }
 
-    this.authenticateRequest(req);
+    await this.authenticateRequest(req);
     this.graphiql(req, res, next);
   }
 
   @Post("/explore/*")
-  private postExplore(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
+  private async postExplore(@Request() req: GraphQLRequest, @Response() res: express.Response, @Next() next) {
     if (this.disableExplorer) {
       throw new errors.realm.AccessDenied();
     }
 
-    this.authenticateRequest(req);
+    await this.authenticateRequest(req);
     this.graphiql(req, res, next);
   }
 
   @Get("/*")
-  private get(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
-    this.authenticateRequest(req);
+  private async get(@Request() req: GraphQLRequest, @Response() res: express.Response, @Next() next) {
+    await this.authenticateRequest(req);
     this.handler(req, res, next);
   }
 
   @Post("/*")
-  private post(@Request() req: RosRequest, @Response() res: express.Response, @Next() next) {
-    this.authenticateRequest(req);
+  private async post(@Request() req: GraphQLRequest, @Response() res: express.Response, @Next() next) {
+    await this.authenticateRequest(req);
     this.handler(req, res, next);
   }
 
   @Delete("/schema/*")
-  private deleteSchema(@Request() req: RosRequest, @Response() res: express.Response) {
+  private deleteSchema(@Request() req: GraphQLRequest, @Response() res: express.Response) {
     this.authenticateRequest(req);
     this.schemaCache.del(this.getPath(req));
     res.status(204).send({});
   }
 
-  private getPath(reqOrPath: RosRequest | string): string {
+  private getPath(reqOrPath: GraphQLRequest | string): string {
     let path = typeof reqOrPath === "string" ? decodeURIComponent(reqOrPath) : reqOrPath.params["0"];
     if (!path.startsWith("/")) {
       path = `/${path}`;
@@ -379,8 +388,8 @@ export class GraphQLService {
     return path;
   }
 
-  private authenticateRequest(req: RosRequest) {
-    this.authenticate(req.authToken, this.getPath(req));
+  private async authenticateRequest(req: GraphQLRequest): Promise<void> {
+    req.user = await this.authenticate(req.authToken, this.getPath(req));
   }
 
   /**
@@ -389,18 +398,52 @@ export class GraphQLService {
    * @param path the optional path to look for in the access token.
    * If not provided, only admin tokens are accepted.
    */
-  private authenticate(authToken: any, path?: string) {
+  private async authenticate(authToken: Token, path?: string): Promise<Realm.Sync.User> {
     if (this.disableAuthentication) {
-      return;
+      return undefined;
     }
 
     if (!authToken) {
       throw new errors.realm.AccessDenied({ detail: "Authorization header is missing." });
     }
 
-    if (!isAdminToken(authToken) && (!path || authToken.path !== path)) {
+    const accessToken = authToken as AccessToken;
+    if (!isAdminToken(authToken) && (!path || accessToken.path !== path)) {
       throw new errors.realm.InvalidCredentials({ detail: "The access token doesn't grant access to the requested path." });
     }
+
+    const partialInfo = extractPartialInfo(path);
+    if (!partialInfo.isPartial) {
+      // Full Realm - we don't need user impersonation, so just return undefined to
+      // make RealmFactory use the admin user
+      return undefined;
+    }
+
+    if (!partialInfo.customIdentifier.startsWith(authToken.identity + "/")) {
+      // We enforce that users only open their own Realms.
+      throw new errors.realm.InvalidCredentials({
+        detail: "The identifier after /__partial/ in the route must match the user Id. Expected: "
+              + `'/__partial/${authToken.identity}/*', but got '/__partial/${partialInfo.customIdentifier}'.`,
+      });
+    }
+
+    const refreshToken = new RefreshToken({
+      appId: authToken.appId,
+      identity: authToken.identity,
+      isAdmin: isAdminToken(authToken),
+      expires: moment().add(1, "year").unix(),
+    });
+
+    // TODO: allow internal https traffic.
+    const authService = await this.server.discovery.waitForService("auth");
+    const user = Realm.Sync.User.deserialize({
+      identity: refreshToken.identity,
+      isAdmin: refreshToken.isAdmin,
+      refreshToken: refreshToken.sign(this.server.privateKey),
+      server: `http://${authService.address}:${authService.port}`,
+    });
+
+    return user;
   }
 
   private validateAccess(context: any, access: string) {
@@ -417,8 +460,14 @@ export class GraphQLService {
   }
 
   private closeRealm(realm: Realm) {
+    if (!realm) {
+      return;
+    }
+
     if (this.realmCacheTTL >= 0) {
       setTimeout(() => realm.close(), this.realmCacheTTL);
+    } else {
+      realm.close();
     }
   }
 
@@ -459,6 +508,10 @@ export class GraphQLService {
       schema += `input ${obj.name}Input { \n${propertyInfo.inputPropertySchema}}\n\n`;
     }
 
+    if (types.length === 0) {
+      throw new Error(`The schema for Realm at path ${path} is empty.`);
+    }
+
     let query = "type Query {\n";
     let mutation = "type Mutation {\n";
     let subscription = "type Subscription {\n";
@@ -471,6 +524,11 @@ export class GraphQLService {
       query += this.setupGetAllObjects(queryResolver, type, pluralType);
       mutation += this.setupAddObject(mutationResolver, type);
       mutation += this.setupDeleteObjects(mutationResolver, type);
+
+      if (extractPartialInfo(path).isPartial) {
+        mutation += this.setupCreatePartialSubscription(mutationResolver, type);
+      }
+
       subscription += this.setupSubscribeToQuery(subscriptionResolver, type, pluralType);
 
       // If object has PK, we add get by PK and update option.
@@ -667,6 +725,44 @@ export class GraphQLService {
     };
 
     return `delete${pluralType}(query: String): Int\n`;
+  }
+
+  private setupCreatePartialSubscription(mutationResolver: IResolverObject, type: string): string {
+    mutationResolver[`create${type}Subscription`] = async (_, args, context) => {
+      this.validateRead(context);
+
+      let result = (context.realm as Realm).objects(type);
+      if (args.query) {
+        result = result.filtered(args.query);
+      }
+
+      if (args.sortBy) {
+        const descending = args.descending || false;
+        result = result.sorted(args.sortBy, descending);
+      }
+
+      const subscription = result.subscribe(args.name);
+
+      await new Promise((resolve, reject) => {
+        subscription.addListener((s, state) => {
+          switch (state) {
+            case Realm.Sync.SubscriptionState.Complete:
+              subscription.removeAllListeners();
+              resolve();
+              break;
+            case Realm.Sync.SubscriptionState.Error:
+              subscription.removeAllListeners();
+              reject(subscription.error);
+              break;
+          }
+        });
+      });
+
+      return this.getCollectionResponse(result, {});
+    };
+
+    const responseType = this.includeCountInResponses ? `${type}Collection` : `[${type}!]`;
+    return `create${type}Subscription(query: String, sortBy: String, descending: Boolean, name: String): ${responseType}\n`;
   }
 
   private upsertObject(
@@ -914,8 +1010,12 @@ export class GraphQLService {
     }
   }
 
-  private async openRealm(path: string): Promise<Realm> {
-    const realm = await this.server.openRealm(path);
+  private async openRealm(path: string, user: Realm.Sync.User): Promise<Realm> {
+    const realm = await this.server.openRealm({
+      remotePath: path,
+      schema: undefined,
+      user,
+    });
 
     if (this.schemaCache) {
       realm.addListener("schema", this.getSchemaHandler(path));
@@ -928,8 +1028,12 @@ export class GraphQLService {
     let value = this.schemaHandlers[path];
     if (!value) {
       value = (realm: Realm, event: string, schema: Realm.ObjectSchema[]) => {
-        this.schemaCache.del(path);
-        this.getSchema(path, realm);
+        try {
+          this.schemaCache.del(path);
+          this.getSchema(path, realm);
+        } catch {
+          // Ignore
+        }
       };
       this.schemaHandlers[path] = value;
     }
