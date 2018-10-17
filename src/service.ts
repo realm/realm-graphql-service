@@ -11,6 +11,7 @@ import * as pluralize from "pluralize";
 import { ObjectSchema, ObjectSchemaProperty } from "realm";
 import {
     AccessToken,
+    AdminRealm,
     BaseRoute,
     Cors,
     Delete,
@@ -26,9 +27,11 @@ import {
     RosRequest,
     Server,
     ServerStarted,
+    Start,
     Stop,
     Token,
     Upgrade,
+    User,
 } from "realm-object-server";
 import { SubscriptionServer } from "subscriptions-transport-ws";
 import { setTimeout } from "timers";
@@ -197,6 +200,7 @@ export class GraphQLService {
   private graphiql: ExpressHandler;
   private pubsub: PubSub;
   private querySubscriptions: { [id: string]: SubscriptionDetails } = {};
+  private adminRealm: Realm;
 
   /**
    * Creates a new `GraphQLService` instance.
@@ -326,7 +330,7 @@ export class GraphQLService {
         subscriptionsEndpoint: `${protocol}://${req.get("host")}/graphql/${encodeURIComponent(path)}`,
       };
 
-      const token = req.rawAuthToken;
+      const token = req.get("authorization");
       if (token) {
         result.passHeader = `'Authorization': '${token}'`;
         result.websocketConnectionParams = { token };
@@ -334,6 +338,11 @@ export class GraphQLService {
 
       return result;
     });
+  }
+
+  @Start()
+  private async start(server: Server) {
+    this.adminRealm = await server.openRealm(AdminRealm);
   }
 
   @Stop()
@@ -441,10 +450,13 @@ export class GraphQLService {
       });
     }
 
+    // TODO: optimize that - either cache it or check if the Realm exists in the factory.
+    const adminRealmUser = this.adminRealm.objectForPrimaryKey<User>("User", authToken.identity);
+
     const refreshToken = new RefreshToken({
       appId: authToken.appId,
       identity: authToken.identity,
-      isAdmin: isAdminToken(authToken),
+      isAdmin: (adminRealmUser && adminRealmUser.isAdmin) || false,
       expires: moment().add(1, "year").unix(),
     });
 
