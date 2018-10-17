@@ -60,6 +60,13 @@ interface GraphQLRequest extends RosRequest {
   user: Realm.Sync.User;
 }
 
+interface GraphQLContext {
+  accessToken: Token;
+  user: Realm.Sync.User;
+  realm?: Realm;
+  operationId?: string;
+}
+
 /**
  * Settings to control the [[GraphQLService]] behavior.
  */
@@ -245,12 +252,13 @@ export class GraphQLService {
           }
 
           socket.id = v4();
-          params.context.operationId = getOperationId(socket, message.id);
-          params.context.realm = await this.openRealm(socket.realmPath, params.context.user);
-          params.schema = this.getSchema(socket.realmPath, params.context.realm);
+          const context = params.context as GraphQLContext;
+          context.operationId = getOperationId(socket, message.id);
+          context.realm = await this.openRealm(socket.realmPath, context.user);
+          params.schema = this.getSchema(socket.realmPath, context.realm);
           return params;
         },
-        onConnect: async (authPayload, socket) => {
+        onConnect: async (authPayload, socket): Promise<GraphQLContext> => {
           let accessToken: Token;
           let user: Realm.Sync.User;
           if (!this.disableAuthentication) {
@@ -282,13 +290,19 @@ export class GraphQLService {
       const realm = await this.openRealm(path, req.user);
       const schema = this.getSchema(path, realm);
 
-      return {
+      const result: {
+        schema: GraphQLSchema,
+        context: GraphQLContext,
+      } = {
         schema,
         context: {
           realm,
           accessToken: req.authToken,
+          user: req.user,
         },
       };
+
+      return result;
     });
 
     this.graphiql = graphiqlExpress((req: GraphQLRequest) => {
@@ -446,7 +460,7 @@ export class GraphQLService {
     return user;
   }
 
-  private validateAccess(context: any, access: string) {
+  private validateAccess(context: GraphQLContext, access: string) {
     if (this.disableAuthentication || isAdminToken(context.accessToken)) {
       return;
     }
@@ -471,11 +485,11 @@ export class GraphQLService {
     }
   }
 
-  private validateRead(context: any) {
+  private validateRead(context: GraphQLContext) {
     this.validateAccess(context, "download");
   }
 
-  private validateWrite(context: any) {
+  private validateWrite(context: GraphQLContext) {
     this.validateAccess(context, "upload");
   }
 
@@ -490,6 +504,7 @@ export class GraphQLService {
     const queryResolver: IResolverObject = {};
     const mutationResolver: IResolverObject = {};
     const subscriptionResolver: IResolverObject = {};
+    const partialInfo = extractPartialInfo(path);
 
     for (const obj of realm.schema) {
       if (this.isReserved(obj.name)) {
@@ -516,6 +531,21 @@ export class GraphQLService {
     let mutation = "type Mutation {\n";
     let subscription = "type Subscription {\n";
 
+    if (partialInfo.isPartial) {
+      schema += `type NamedSubscription {
+        name: String,
+        objectType: String!,
+        query: String!
+      }\n`;
+      schema += `type NamedSubscriptionCollection {
+        count: Int!
+        items: [NamedSubscription!]
+      }\n`;
+
+      query += this.setupListPartialSubscriptions(queryResolver);
+      mutation += this.setupDeletePartialSubscription(mutationResolver);
+    }
+
     for (const [type, pk] of types) {
       // TODO: this assumes types are PascalCase
       const camelCasedType = this.camelcase(type);
@@ -525,7 +555,7 @@ export class GraphQLService {
       mutation += this.setupAddObject(mutationResolver, type);
       mutation += this.setupDeleteObjects(mutationResolver, type);
 
-      if (extractPartialInfo(path).isPartial) {
+      if (partialInfo.isPartial) {
         mutation += this.setupCreatePartialSubscription(mutationResolver, type);
       }
 
@@ -566,7 +596,7 @@ export class GraphQLService {
   }
 
   private setupGetAllObjects(queryResolver: IResolverObject, type: string, pluralType: string): string {
-    queryResolver[pluralType] = (_, args, context) => {
+    queryResolver[pluralType] = (_, args, context: GraphQLContext) => {
       this.validateRead(context);
 
       let result = context.realm.objects(type);
@@ -588,7 +618,7 @@ export class GraphQLService {
   }
 
   private setupAddObject(mutationResolver: IResolverObject, type: string): string {
-    mutationResolver[`add${type}`] = (_, args, context) => {
+    mutationResolver[`add${type}`] = (_, args, context: GraphQLContext) => {
       this.validateWrite(context);
 
       let result: any;
@@ -604,11 +634,10 @@ export class GraphQLService {
 
   private setupSubscribeToQuery(subscriptionResolver: IResolverObject, type: string, pluralType: string): string {
     subscriptionResolver[pluralType] = {
-      subscribe: (_, args, context) => {
+      subscribe: (_, args, context: GraphQLContext) => {
         this.validateRead(context);
 
-        const realm: Realm = context.realm;
-        let result = realm.objects(type);
+        let result = context.realm.objects(type);
         if (args.query) {
           result = result.filtered(args.query);
         }
@@ -621,7 +650,7 @@ export class GraphQLService {
         const opId = context.operationId;
         this.querySubscriptions[opId] = {
           results: result,
-          realm,
+          realm: context.realm,
         };
 
         result.addListener((collection, change) => {
@@ -640,7 +669,7 @@ export class GraphQLService {
   }
 
   private setupGetObjectByPK(queryResolver: IResolverObject, type: string, camelCasedType: string, pk: PKInfo): string {
-    queryResolver[camelCasedType] = (_, args, context) => {
+    queryResolver[camelCasedType] = (_, args, context: GraphQLContext) => {
       this.validateRead(context);
 
       return context.realm.objectForPrimaryKey(type, args[pk.name]);
@@ -651,7 +680,7 @@ export class GraphQLService {
   private setupUpdateObject(mutationResolver: IResolverObject, type: string): string {
     // TODO: validate that the PK is set
     // TODO: validate that object exists, otherwise it's addOrUpdate not just update
-    mutationResolver[`update${type}`] = (_, args, context) => {
+    mutationResolver[`update${type}`] = (_, args, context: GraphQLContext) => {
       this.validateWrite(context);
 
       let result: any;
@@ -666,7 +695,7 @@ export class GraphQLService {
   }
 
   private setupDiffUpdateObject(mutationResolver: IResolverObject, type: string): string {
-    mutationResolver[`diffUpdate${type}`] = (_, args, context) => {
+    mutationResolver[`diffUpdate${type}`] = (_, args, context: GraphQLContext) => {
       this.validateWrite(context);
 
       try {
@@ -685,7 +714,7 @@ export class GraphQLService {
   }
 
   private setupDeleteObject(mutationResolver: IResolverObject, type: string, pk: PKInfo): string {
-    mutationResolver[`delete${type}`] = (_, args, context) => {
+    mutationResolver[`delete${type}`] = (_, args, context: GraphQLContext) => {
       this.validateWrite(context);
 
       let result: boolean = false;
@@ -706,19 +735,18 @@ export class GraphQLService {
   private setupDeleteObjects(mutationResolver: IResolverObject, type: string): string {
     const pluralType = this.pluralize(type);
 
-    mutationResolver[`delete${pluralType}`] = (_, args, context) => {
+    mutationResolver[`delete${pluralType}`] = (_, args, context: GraphQLContext) => {
       this.validateWrite(context);
 
-      const realm: Realm = context.realm;
       let result: number;
-      realm.write(() => {
-        let toDelete = realm.objects(type);
+      context.realm.write(() => {
+        let toDelete = context.realm.objects(type);
         if (args.query) {
           toDelete = toDelete.filtered(args.query);
         }
 
         result = toDelete.length;
-        realm.delete(toDelete);
+        context.realm.delete(toDelete);
       });
 
       return result;
@@ -728,10 +756,8 @@ export class GraphQLService {
   }
 
   private setupCreatePartialSubscription(mutationResolver: IResolverObject, type: string): string {
-    mutationResolver[`create${type}Subscription`] = async (_, args, context) => {
-      this.validateRead(context);
-
-      let result = (context.realm as Realm).objects(type);
+    mutationResolver[`create${type}Subscription`] = async (_, args, context: GraphQLContext) => {
+      let result = context.realm.objects(type);
       if (args.query) {
         result = result.filtered(args.query);
       }
@@ -741,7 +767,7 @@ export class GraphQLService {
         result = result.sorted(args.sortBy, descending);
       }
 
-      const subscription = result.subscribe(args.name);
+      const subscription = args.name ? result.subscribe(args.name) : result.subscribe();
 
       await new Promise((resolve, reject) => {
         subscription.addListener((s, state) => {
@@ -765,8 +791,27 @@ export class GraphQLService {
     return `create${type}Subscription(query: String, sortBy: String, descending: Boolean, name: String): ${responseType}\n`;
   }
 
+  private setupListPartialSubscriptions(queryResolver: IResolverObject): string {
+    queryResolver.queryBasedSubscriptions = async (_, args, context: GraphQLContext) => {
+      const result = context.realm.subscriptions(args.name);
+      return this.getCollectionResponse(result, {});
+    };
+
+    const responseType = this.includeCountInResponses ? "NamedSubscriptionCollection" : "[NamedSubscription!]";
+    return `queryBasedSubscriptions(name: String): ${responseType}\n`;
+  }
+
+  private setupDeletePartialSubscription(mutationResolver: IResolverObject): string {
+    mutationResolver.deleteQueryBasedSubscription = async (_, args, context: GraphQLContext) => {
+      context.realm.unsubscribe(args.name);
+      return true;
+    };
+
+    return "deleteQueryBasedSubscription(name: String!): Boolean\n";
+  }
+
   private upsertObject(
-    context: { realm: Realm },
+    context: GraphQLContext,
     newObject: any,
     type: string,
     shouldBeginTransaction = true,
