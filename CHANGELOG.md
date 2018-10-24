@@ -1,3 +1,14 @@
+# 3.4.0 (2018-10-24)
+
+### Enhancements
+* Added preliminary support for using query-based synchronized Realms. When opening such Realms, there several new GraphQL nodes added:
+  * `createXXXSubscription(query: String, sortBy: String, descending: Boolean, name: String)`: creates a Realm subscription for objects of type `XXX` that match the query. When working with query-based Realms, you need to first create Realm subscriptions to indicate which objects should be synchronized to the Realm. The response is a collection of objects that match the query. Once a subscription is created, it will be persisted and objects will be automatically synchronized until the subscription is removed. You can specify an optional name, that will allow you to later remove that subscription.
+  * `queryBasedSubscriptions(name: String)`: returns a collection of active subscriptions.
+  * `deleteQueryBasedSubscription(name: String!)`: removes a subscription by name.
+
+### Bug fixes
+* Fixed a bug which would cause the following error message to be output when a class didn't have any properties: `Invalid options provided to ApolloServer: Syntax Error: Expected Name, found }`. Now such classes are ignored as they contain no meaningful information. [realm-graphql#32](https://github.com/realm/realm-graphql/issues/32)
+
 # 3.3.0 (2018-09-11)
 
 ### Enhancements
@@ -9,13 +20,12 @@ to automatically round the number down and treat it as an integer. To enable tha
 `presentIntsAsFloatsInSchema: true` in the `GraphQLService` constructor.
 
 ### Known notable issues
-* There is currently no support for working with query-based sync (#70). 
+* There is currently no support for working with query-based sync (#70).
 
 # 3.2.2 (2018-09-10)
 
 ### Bug fixes
 * Pinned the Apollo dependencies to 1.3.6 as 1.4.0 is breaking the GraphiQL explorer functionality.
-
 
 # 3.2.1 (2018-09-04)
 

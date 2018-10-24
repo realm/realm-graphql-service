@@ -525,6 +525,11 @@ export class GraphQLService {
 
       const propertyInfo = this.getPropertySchema(obj);
 
+      if (!propertyInfo.propertySchema) {
+        // If the object doesn't have properties, we don't want it.
+        continue;
+      }
+
       types.push([obj.name, propertyInfo.pk]);
 
       schema += `type ${obj.name} { \n${propertyInfo.propertySchema}}\n\n`;
