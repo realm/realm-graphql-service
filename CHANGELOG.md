@@ -1,3 +1,19 @@
+# Next Version (TBD)
+
+### Enhancements
+* None
+
+### Bug fixes
+* None
+
+### Compatibility
+* Compatible with Realm Object Server releases from 3.12.0 or later.
+
+### Known notable issues
+* Support for using query-based Realms is in beta and while the API is stable, there may be corner cases that are not well covered.
+* Linking to a class that contains no properties will result in GraphQL errors claiming that it can't find that class. The workaround is to add at least one property to the class (this can be done either via any of the native SDKs or Studio).
+
+
 # 3.4.0 (2018-10-24)
 
 ### Enhancements
@@ -10,10 +26,11 @@
 * Fixed a bug which would cause the following error message to be output when a class didn't have any properties: `Invalid options provided to ApolloServer: Syntax Error: Expected Name, found }`. Now such classes are ignored as they contain no meaningful information. [realm-graphql#32](https://github.com/realm/realm-graphql/issues/32)
 
 ### Compatibility
-* Compatible with Realm Object Server releases from 3.8.1 or later.
+* Compatible with Realm Object Server releases from 3.12.0 or later.
 
 ### Known notable issues
-* None
+* Support for using query-based Realms is in beta and while the API is stable, there may be corner cases that are not well covered.
+* Linking to a class that contains no properties will result in GraphQL errors claiming that it can't find that class. The workaround is to add at least one property to the class (this can be done either via any of the native SDKs or Studio).
 
 
 # 3.3.0 (2018-09-11)
