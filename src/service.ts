@@ -442,7 +442,7 @@ export class GraphQLService {
       return undefined;
     }
 
-    if (!partialInfo.customIdentifier.startsWith(authToken.identity + "/")) {
+    if (!partialInfo.customIdentifier.startsWith(authToken.identity + "/") && !path.endsWith("/" + authToken.identity)) {
       // We enforce that users only open their own Realms.
       throw new errors.realm.InvalidCredentials({
         detail: "The identifier after /__partial/ in the route must match the user Id. Expected: "
