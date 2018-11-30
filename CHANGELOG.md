@@ -4,7 +4,7 @@
 * None
 
 ### Bug fixes
-* None
+* Fixed an issue that could cause an exception with the message `ReferenceError: realm is not defined` to be thrown. ([#83](https://github.com/realm/realm-graphql-service/issues/83))
 
 ### Compatibility
 * Compatible with Realm Object Server releases from 3.12.0 or later.
