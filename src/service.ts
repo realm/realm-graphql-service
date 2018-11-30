@@ -286,12 +286,13 @@ export class GraphQLService {
     );
 
     this.handler = graphqlExpress(async (req: GraphQLRequest, res) => {
+      let realm: Realm;
       res.once("finish", () => {
         this.closeRealm(realm);
       });
 
       const path = this.getPath(req);
-      const realm = await this.openRealm(path, req.user);
+      realm = await this.openRealm(path, req.user);
       const schema = this.getSchema(path, realm);
 
       const result: {
