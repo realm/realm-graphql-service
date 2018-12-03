@@ -193,12 +193,12 @@ export class GraphQLService {
   private readonly forceExplorerSSL: boolean | undefined;
   private readonly includeCountInResponses: boolean;
   private readonly presentIntsAsFloatsInSchema: boolean;
-  private readonly state: { [path: string]: { 
+  private readonly connectionStates: { [path: string]: {
     connection: Realm.Sync.ConnectionState,
     uploaded: {
       transferred: number,
       transferrable: number,
-    }
+    },
   } } = {};
 
   private server: Server;
@@ -390,6 +390,24 @@ export class GraphQLService {
     this.graphiql(req, res, next);
   }
 
+  @Get("/connectionStatus/*")
+  private getConnectionStatus(@Request() req: GraphQLRequest, @Response() res: express.Response) {
+    this.authenticateRequest(req);
+    const path = this.getPath(req);
+    let connectionState = this.connectionStates[path];
+    if (!connectionState) {
+      connectionState = {
+        connection: Realm.Sync.ConnectionState.Disconnected,
+        uploaded: {
+          transferrable: 0,
+          transferred: 0,
+        },
+      };
+    }
+
+    res.send(connectionState);
+  }
+
   @Get("/*")
   private async get(@Request() req: GraphQLRequest, @Response() res: express.Response, @Next() next) {
     await this.authenticateRequest(req);
@@ -407,17 +425,6 @@ export class GraphQLService {
     this.authenticateRequest(req);
     this.schemaCache.del(this.getPath(req));
     res.status(204).send({});
-  }
-
-  @Get("/synchronizing/*")
-  private isRealmSynchronizing(@Request() req: GraphQLRequest, @Response() res: express.Response) {
-    this.authenticateRequest(req);
-    const path = this.getPath(req);
-    if (path in this.state) {
-      res.send(this.state[path]);
-    } else {
-      res.status(404).send({});
-    }
   }
 
   private getPath(reqOrPath: GraphQLRequest | string): string {
@@ -1097,14 +1104,20 @@ export class GraphQLService {
       user,
     });
 
-    this.state[path] = <any>{ connection: Realm.Sync.ConnectionState.Connected };
+    this.connectionStates[path] = {
+      connection: Realm.Sync.ConnectionState.Connected,
+      uploaded: {
+        transferrable: 0,
+        transferred: 0,
+      },
+    };
 
     realm.syncSession.addConnectionNotification((state) => {
-      this.state[path].connection = state;
+      this.connectionStates[path].connection = state;
     });
 
     realm.syncSession.addProgressNotification("upload", "reportIndefinitely", (transferred, transferrable) => {
-      this.state[path].uploaded = { transferred, transferrable };
+      this.connectionStates[path].uploaded = { transferred, transferrable };
     });
 
     if (this.schemaCache) {
