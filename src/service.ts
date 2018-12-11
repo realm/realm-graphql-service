@@ -1123,13 +1123,15 @@ export class GraphQLService {
       user,
     });
 
-    this.connectionStates[path] = {
-      connection: Realm.Sync.ConnectionState.Connected,
-      uploaded: {
-        transferrable: 0,
-        transferred: 0,
-      },
-    };
+    if (!(path in this.connectionStates)) {
+      this.connectionStates[path] = {
+        connection: Realm.Sync.ConnectionState.Connected,
+        uploaded: {
+          transferrable: 0,
+          transferred: 0,
+        },
+      };
+    }
 
     let connectionHandler = this.connectionHandlers[path];
     if (!connectionHandler) {
