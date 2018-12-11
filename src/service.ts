@@ -193,6 +193,16 @@ export class GraphQLService {
   private readonly forceExplorerSSL: boolean | undefined;
   private readonly includeCountInResponses: boolean;
   private readonly presentIntsAsFloatsInSchema: boolean;
+  private readonly connectionStates: { [path: string]: {
+    connection: Realm.Sync.ConnectionState,
+    uploaded: {
+      transferred: number,
+      transferrable: number,
+    },
+  } } = {};
+
+  private readonly connectionHandlers: { [path: string]: Realm.Sync.ConnectionNotificationCallback } = {};
+  private readonly uploadProgressHandlers: { [path: string]: Realm.Sync.ProgressNotificationCallback } = {};
 
   private server: Server;
   private subscriptionServer: SubscriptionServer;
@@ -384,6 +394,24 @@ export class GraphQLService {
     this.graphiql(req, res, next);
   }
 
+  @Get("/connectionStatus/*")
+  private getConnectionStatus(@Request() req: GraphQLRequest, @Response() res: express.Response) {
+    this.authenticateRequest(req);
+    const path = this.getPath(req);
+    let connectionState = this.connectionStates[path];
+    if (!connectionState) {
+      connectionState = {
+        connection: Realm.Sync.ConnectionState.Disconnected,
+        uploaded: {
+          transferrable: 0,
+          transferred: 0,
+        },
+      };
+    }
+
+    res.send(connectionState);
+  }
+
   @Get("/*")
   private async get(@Request() req: GraphQLRequest, @Response() res: express.Response, @Next() next) {
     await this.authenticateRequest(req);
@@ -491,10 +519,26 @@ export class GraphQLService {
       return;
     }
 
+    const removeListeners = async () => {
+      try {
+        await realm.syncSession.uploadAllLocalChanges(5 * 60 * 1000);
+      } catch { }
+      const path = new url.URL(realm.syncSession.config.url).pathname;
+      realm.syncSession.removeConnectionNotification(this.connectionHandlers[path]);
+      delete this.connectionHandlers[path];
+
+      realm.syncSession.removeProgressNotification(this.uploadProgressHandlers[path]);
+      delete this.uploadProgressHandlers[path];
+    }
+
     if (this.realmCacheTTL >= 0) {
-      setTimeout(() => realm.close(), this.realmCacheTTL);
+      setTimeout(() => { 
+        realm.close();
+        removeListeners();
+      }, this.realmCacheTTL);
     } else {
       realm.close();
+      removeListeners();
     }
   }
 
@@ -1080,6 +1124,28 @@ export class GraphQLService {
       user,
     });
 
+    if (!(path in this.connectionStates)) {
+      this.connectionStates[path] = {
+        connection: Realm.Sync.ConnectionState.Connected,
+        uploaded: {
+          transferrable: 0,
+          transferred: 0,
+        },
+      };
+    }
+
+    let connectionHandler = this.connectionHandlers[path];
+    if (!connectionHandler) {
+      connectionHandler = this.connectionHandlers[path] = this.onConnectionNotification.bind(this, path);
+    }
+    realm.syncSession.addConnectionNotification(connectionHandler);
+
+    let progressHandler = this.uploadProgressHandlers[path];
+    if (!progressHandler) {
+      progressHandler = this.uploadProgressHandlers[path] = this.onUploadProgressNotification.bind(this, path);
+    }
+    realm.syncSession.addProgressNotification("upload", "reportIndefinitely", progressHandler);
+
     if (this.schemaCache) {
       realm.addListener("schema", this.getSchemaHandler(path));
     }
@@ -1102,5 +1168,13 @@ export class GraphQLService {
     }
 
     return value;
+  }
+
+  private onConnectionNotification(path: string, newState: Realm.Sync.ConnectionState, oldState: Realm.Sync.ConnectionState) {
+    this.connectionStates[path].connection = newState;
+  }
+
+  private onUploadProgressNotification(path: string, transferred: number, transferrable: number) {
+    this.connectionStates[path].uploaded = { transferred, transferrable };
   }
 }
