@@ -1,3 +1,19 @@
+# Next Version (TBD)
+
+### Enhancements
+* None
+
+### Bug fixes
+* None
+
+### Compatibility
+* Compatible with Realm Object Server releases from 3.12.0 or later.
+
+### Known notable issues
+* Support for using query-based Realms is in beta and while the API is stable, there may be corner cases that are not well covered.
+* Linking to a class that contains no properties will result in GraphQL errors claiming that it can't find that class. The workaround is to add at least one property to the class (this can be done either via any of the native SDKs or Studio).
+
+
 # 3.5.0 (2018-12-19)
 
 ### Enhancements
