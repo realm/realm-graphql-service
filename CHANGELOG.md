@@ -1,7 +1,7 @@
 # Next Version (TBD)
 
 ### Enhancements
-* None
+* Allow overriding the generated model names to avoid clashes with existing classes. The override properties are `collectionModelSuffix`, `inputModelSuffix`, `namedSubscriptionModelName`, and `base64ModelName` on the `GraphQLServiceSettings` interface.
 
 ### Bug fixes
 * None

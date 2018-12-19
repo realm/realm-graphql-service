@@ -129,6 +129,33 @@ export interface GraphQLServiceSettings {
    * will get thrown further down the stack and may be harder to interpret. Default is false.
    */
   presentIntsAsFloatsInSchema?: boolean;
+
+  /**
+   * Controls the suffix used for the model wrapping a collection of objects. By default, it
+   * is `Collection`. Override this if you have both `Model` and `ModelCollection` classes
+   * in your Realm.
+   */
+  collectionModelSuffix?: string;
+
+  /**
+   * Controls the suffix used for the model wrapping an input passed into the `updateModel`
+   * mutation. By default, it is `Input`. Override this if you have both `Model` and `ModelInput`
+   * classes in your Realm.
+   */
+  inputModelSuffix?: string;
+
+  /**
+   * Controls the name of the model wrapping a named subscription (only present when the
+   * Realm is opened in query-sync mode). By default, it is `NamedSubscription`. Override
+   * this if you already have a `NamedSubscription` class in your Realm.
+   */
+  namedSubscriptionModelName?: string;
+
+  /**
+   * Controls the name of the model wrapping the base64 representation of binary properties.
+   * By default, it is `Base64`. Override this if you already have a `Base64` class in your Realm.
+   */
+  base64ModelName?: string;
 }
 
 /**
@@ -145,24 +172,6 @@ export interface SchemaCacheSettings {
    */
   maxAge?: number;
 }
-
-const Base64Type = new GraphQLScalarType({
-  name: "Base64",
-  description: "A base64-encoded binary blob",
-  serialize(value) {
-    return Buffer.from(value).toString("base64");
-  },
-  parseValue(value) {
-    return Buffer.from(value, "base64");
-  },
-  parseLiteral(ast) {
-    if (ast.kind === "StringValue") {
-      return Buffer.from(ast.value, "base64");
-    }
-
-    throw new TypeError(`Expected StringValue literal, but got ${ast.kind}`);
-  },
-});
 
 /**
  * A service that exposes a GraphQL API for accessing the Realm files.
@@ -193,6 +202,10 @@ export class GraphQLService {
   private readonly forceExplorerSSL: boolean | undefined;
   private readonly includeCountInResponses: boolean;
   private readonly presentIntsAsFloatsInSchema: boolean;
+  private readonly collectionModelSuffix: string;
+  private readonly inputModelSuffix: string;
+  private readonly namedSubscriptionModelName: string;
+  private readonly base64Type: GraphQLScalarType;
 
   private server: Server;
   private subscriptionServer: SubscriptionServer;
@@ -223,6 +236,27 @@ export class GraphQLService {
     this.forceExplorerSSL = settings.forceExplorerSSL;
     this.includeCountInResponses = settings.includeCountInResponses || false;
     this.presentIntsAsFloatsInSchema = settings.presentIntsAsFloatsInSchema || false;
+    this.collectionModelSuffix = settings.collectionModelSuffix || "Collection";
+    this.namedSubscriptionModelName = settings.namedSubscriptionModelName || "NamedSubscription";
+    this.inputModelSuffix = settings.inputModelSuffix || "Input";
+
+    this.base64Type = new GraphQLScalarType({
+      name: settings.base64ModelName || "Base64",
+      description: "A base64-encoded binary blob",
+      serialize(value) {
+        return Buffer.from(value).toString("base64");
+      },
+      parseValue(value) {
+        return Buffer.from(value, "base64");
+      },
+      parseLiteral(ast) {
+        if (ast.kind === "StringValue") {
+          return Buffer.from(ast.value, "base64");
+        }
+
+        throw new TypeError(`Expected StringValue literal, but got ${ast.kind}`);
+      },
+    });
   }
 
   @ServerStarted()
@@ -511,7 +545,7 @@ export class GraphQLService {
       return this.schemaCache.get(path);
     }
 
-    let schema = `\nscalar ${Base64Type.name}\n`;
+    let schema = `\nscalar ${this.base64Type.name}\n`;
 
     const types = new Array<[string, PKInfo]>();
     const queryResolver: IResolverObject = {};
@@ -534,11 +568,11 @@ export class GraphQLService {
       types.push([obj.name, propertyInfo.pk]);
 
       schema += `type ${obj.name} { \n${propertyInfo.propertySchema}}\n\n`;
-      schema += `type ${obj.name}Collection {
+      schema += `type ${obj.name}${this.collectionModelSuffix} {
         count: Int!
         items: [${obj.name}!]
       }\n`;
-      schema += `input ${obj.name}Input { \n${propertyInfo.inputPropertySchema}}\n\n`;
+      schema += `input ${obj.name}${this.inputModelSuffix} { \n${propertyInfo.inputPropertySchema}}\n\n`;
     }
 
     if (types.length === 0) {
@@ -550,14 +584,14 @@ export class GraphQLService {
     let subscription = "type Subscription {\n";
 
     if (partialInfo.isPartial) {
-      schema += `type NamedSubscription {
+      schema += `type ${this.namedSubscriptionModelName} {
         name: String,
         objectType: String!,
         query: String!
       }\n`;
-      schema += `type NamedSubscriptionCollection {
+      schema += `type ${this.namedSubscriptionModelName}${this.collectionModelSuffix} {
         count: Int!
-        items: [NamedSubscription!]
+        items: [${this.namedSubscriptionModelName}!]
       }\n`;
 
       query += this.setupListPartialSubscriptions(queryResolver);
@@ -602,7 +636,7 @@ export class GraphQLService {
         Query: queryResolver,
         Mutation: mutationResolver,
         Subscription: subscriptionResolver,
-        [Base64Type.name]: Base64Type,
+        [this.base64Type.name]: this.base64Type,
       },
     });
 
@@ -631,7 +665,7 @@ export class GraphQLService {
     };
 
     // TODO: limit sortBy to only valid properties
-    const responseType = this.includeCountInResponses ? `${type}Collection` : `[${type}!]`;
+    const responseType = this.includeCountInResponses ? `${type}${this.collectionModelSuffix}` : `[${type}!]`;
     return `${pluralType}(query: String, sortBy: String, descending: Boolean, skip: Int, take: Int): ${responseType}\n`;
   }
 
@@ -647,7 +681,7 @@ export class GraphQLService {
       return result;
     };
 
-    return `add${type}(input: ${type}Input): ${type}\n`;
+    return `add${type}(input: ${type}${this.inputModelSuffix}): ${type}\n`;
   }
 
   private setupSubscribeToQuery(subscriptionResolver: IResolverObject, type: string, pluralType: string): string {
@@ -682,7 +716,7 @@ export class GraphQLService {
     };
 
     // TODO: limit sortBy to only valid properties
-    const responseType = this.includeCountInResponses ? `${type}Collection` : `[${type}!]`;
+    const responseType = this.includeCountInResponses ? `${type}${this.collectionModelSuffix}` : `[${type}!]`;
     return `${pluralType}(query: String, sortBy: String, descending: Boolean, skip: Int, take: Int): ${responseType}\n`;
   }
 
@@ -709,7 +743,7 @@ export class GraphQLService {
       return result;
     };
 
-    return `update${type}(input: ${type}Input): ${type}\n`;
+    return `update${type}(input: ${type}${this.inputModelSuffix}): ${type}\n`;
   }
 
   private setupDiffUpdateObject(mutationResolver: IResolverObject, type: string): string {
@@ -728,7 +762,7 @@ export class GraphQLService {
       }
     };
 
-    return `diffUpdate${type}(input: ${type}Input): ${type}\n`;
+    return `diffUpdate${type}(input: ${type}${this.inputModelSuffix}): ${type}\n`;
   }
 
   private setupDeleteObject(mutationResolver: IResolverObject, type: string, pk: PKInfo): string {
@@ -805,7 +839,7 @@ export class GraphQLService {
       return this.getCollectionResponse(result, {});
     };
 
-    const responseType = this.includeCountInResponses ? `${type}Collection` : `[${type}!]`;
+    const responseType = this.includeCountInResponses ? `${type}${this.collectionModelSuffix}` : `[${type}!]`;
     return `create${type}Subscription(query: String, sortBy: String, descending: Boolean, name: String): ${responseType}\n`;
   }
 
@@ -815,7 +849,7 @@ export class GraphQLService {
       return this.getCollectionResponse(result, {});
     };
 
-    const responseType = this.includeCountInResponses ? "NamedSubscriptionCollection" : "[NamedSubscription!]";
+    const responseType = this.includeCountInResponses ? `${this.namedSubscriptionModelName}${this.collectionModelSuffix}` : `[${this.namedSubscriptionModelName}!]`;
     return `queryBasedSubscriptions(name: String): ${responseType}\n`;
   }
 
@@ -951,7 +985,7 @@ export class GraphQLService {
     switch (prop.type) {
       case "object":
         type = prop.objectType;
-        inputType = `${prop.objectType}Input`;
+        inputType = `${prop.objectType}${this.inputModelSuffix}`;
         break;
       case "list":
         const innerType = this.getPrimitiveTypeString(prop.objectType, prop.optional);
@@ -971,7 +1005,7 @@ export class GraphQLService {
             inputType = type;
             break;
           default:
-            inputType = `[${innerType}Input]`;
+            inputType = `[${innerType}${this.inputModelSuffix}]`;
             break;
         }
         break;
@@ -1005,7 +1039,7 @@ export class GraphQLService {
         result = "String";
         break;
       case "data":
-        result = Base64Type.name;
+        result = this.base64Type.name;
         break;
       default:
         return prop;
