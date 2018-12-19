@@ -130,12 +130,31 @@ export interface GraphQLServiceSettings {
    */
   presentIntsAsFloatsInSchema?: boolean;
 
+  /**
+   * Controls the suffix used for the model wrapping a collection of objects. By default, it
+   * is `Collection`. Override this if you have both `Model` and `ModelCollection` classes
+   * in your Realm.
+   */
   collectionModelSuffix?: string;
 
+  /**
+   * Controls the suffix used for the model wrapping an input passed into the `updateModel`
+   * mutation. By default, it is `Input`. Override this if you have both `Model` and `ModelInput`
+   * classes in your Realm.
+   */
   inputModelSuffix?: string;
 
+  /**
+   * Controls the name of the model wrapping a named subscription (only present when the
+   * Realm is opened in query-sync mode). By default, it is `NamedSubscription`. Override
+   * this if you already have a `NamedSubscription` class in your Realm.
+   */
   namedSubscriptionModelName?: string;
 
+  /**
+   * Controls the name of the model wrapping the base64 representation of binary properties.
+   * By default, it is `Base64`. Override this if you already have a `Base64` class in your Realm.
+   */
   base64ModelName?: string;
 }
 
